@@ -16,9 +16,12 @@ function Exit-Hook {
     exit 0
 }
 
+$herdrEnv = if ($env:HERDR_ENV) { $env:HERDR_ENV.Trim() } else { "" }
+$paneId = if ($env:HERDR_PANE_ID) { $env:HERDR_PANE_ID.Trim() } else { "" }
+
 if ($Action -ne "session") { Exit-Hook }
-if ($env:HERDR_ENV -ne "1") { Exit-Hook }
-if ([string]::IsNullOrWhiteSpace($env:HERDR_PANE_ID)) { Exit-Hook }
+if ($herdrEnv -ne "1") { Exit-Hook }
+if ([string]::IsNullOrWhiteSpace($paneId)) { Exit-Hook }
 
 $inputText = [Console]::In.ReadToEnd()
 try {
@@ -38,7 +41,7 @@ try {
     $sessionArgs = @(
         "pane",
         "report-agent-session",
-        $env:HERDR_PANE_ID,
+        $paneId,
         "--source",
         "herdr:antigravity_cli",
         "--agent",

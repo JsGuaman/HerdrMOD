@@ -1353,12 +1353,40 @@ pub(crate) fn install_antigravity_cli() -> io::Result<AntigravityCliInstallPaths
 ///
 /// Every event Herdr registers takes a flat handler list; the `matcher`/`hooks`
 /// group is only valid for the tool events, which Herdr does not use.
+pub(crate) fn antigravity_cli_hook_command(hook_path: &Path, action: &str) -> String {
+    #[cfg(windows)]
+    {
+        let path = hook_path.display().to_string();
+        if !path.contains(' ') {
+            format!("powershell -NoProfile -ExecutionPolicy Bypass -File {path} {action}")
+        } else {
+            use base64::Engine;
+            let path_escaped = path.replace('\'', "''");
+            let script = format!("& '{path_escaped}' {action}");
+            let encoded_script = script
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes)
+                .collect::<Vec<_>>();
+            let encoded = base64::engine::general_purpose::STANDARD.encode(encoded_script);
+            format!("powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded}")
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        hook_command(hook_path, Some(action))
+    }
+}
+
+/// Builds the Herdr-owned `hooks.json` block for Antigravity CLI.
+///
+/// Every event Herdr registers takes a flat handler list; the `matcher`/`hooks`
+/// group is only valid for the tool events, which Herdr does not use.
 fn antigravity_cli_hook_block(hook_path: &Path) -> Value {
     let mut block = Map::new();
     for (event, action) in ANTIGRAVITY_CLI_HOOK_EVENTS {
         let handler = json!({
             "type": "command",
-            "command": hook_command(hook_path, Some(action)),
+            "command": antigravity_cli_hook_command(hook_path, action),
             "timeout": ANTIGRAVITY_CLI_HOOK_TIMEOUT_SEC,
         });
         block.insert(event.to_string(), json!([handler]));
