@@ -803,6 +803,30 @@ pub(super) fn apply_context_menu_action(
         }
         (
             ContextMenuKind::Workspace { ws_idx } | ContextMenuKind::GitWorkspace { ws_idx, .. },
+            Some("Hibernate"),
+        ) => {
+            state.request_hibernate_workspace = Some(ws_idx);
+            leave_modal(state);
+        }
+        (
+            ContextMenuKind::HibernatedWorkspace { hib_idx },
+            Some("Restore"),
+        ) => {
+            state.request_restore_hibernated_workspace = Some(hib_idx);
+            leave_modal(state);
+        }
+        (
+            ContextMenuKind::HibernatedWorkspace { hib_idx },
+            Some("Delete"),
+        ) => {
+            if hib_idx < state.hibernated_workspaces.len() {
+                state.hibernated_workspaces.remove(hib_idx);
+                state.mark_session_dirty();
+            }
+            leave_modal(state);
+        }
+        (
+            ContextMenuKind::Workspace { ws_idx } | ContextMenuKind::GitWorkspace { ws_idx, .. },
             Some("Rename"),
         ) => {
             open_rename_workspace(state, terminal_runtimes, ws_idx);
@@ -1227,6 +1251,31 @@ impl App {
                     } else {
                         self.state.collapsed_space_keys.insert(key);
                     }
+                    self.state.mark_session_dirty();
+                }
+                leave_modal(&mut self.state);
+            }
+            (
+                ContextMenuKind::Workspace { ws_idx }
+                | ContextMenuKind::GitWorkspace { ws_idx, .. },
+                Some("Hibernate"),
+            ) => {
+                self.hibernate_workspace_idx(ws_idx);
+                leave_modal(&mut self.state);
+            }
+            (
+                ContextMenuKind::HibernatedWorkspace { hib_idx },
+                Some("Restore"),
+            ) => {
+                self.restore_hibernated_workspace(hib_idx);
+                leave_modal(&mut self.state);
+            }
+            (
+                ContextMenuKind::HibernatedWorkspace { hib_idx },
+                Some("Delete"),
+            ) => {
+                if hib_idx < self.state.hibernated_workspaces.len() {
+                    self.state.hibernated_workspaces.remove(hib_idx);
                     self.state.mark_session_dirty();
                 }
                 leave_modal(&mut self.state);
@@ -2212,8 +2261,13 @@ mod tests {
             list: MenuListState::new(0),
         };
         let mut terminal_runtimes = crate::terminal::TerminalRuntimeRegistry::new();
+        let idx = menu
+            .items()
+            .iter()
+            .position(|item| *item == "Close group")
+            .expect("close group item");
 
-        apply_context_menu_action(&mut state, &mut terminal_runtimes, menu, 1);
+        apply_context_menu_action(&mut state, &mut terminal_runtimes, menu, idx);
 
         assert_eq!(state.selected, 0);
         assert_eq!(state.mode, Mode::ConfirmClose);

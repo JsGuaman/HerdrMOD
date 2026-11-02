@@ -37,11 +37,12 @@ impl App {
     }
 
     fn capture_session_save_job(&self) -> SessionSaveJob {
-        if self.state.workspaces.is_empty() {
+        if self.state.workspaces.is_empty() && self.state.hibernated_workspaces.is_empty() {
             SessionSaveJob::Clear
         } else {
             let snapshot = crate::persist::capture(
                 &self.state.workspaces,
+                &self.state.hibernated_workspaces,
                 &self.state.terminals,
                 &self.terminal_runtimes,
                 self.state.active,

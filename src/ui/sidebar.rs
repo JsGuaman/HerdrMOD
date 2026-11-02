@@ -658,7 +658,10 @@ pub(crate) fn agent_panel_scrollbar_rect(app: &AppState, area: Rect) -> Option<R
 pub(crate) fn compute_workspace_list_areas(
     app: &AppState,
     area: Rect,
-) -> (Vec<crate::app::state::WorkspaceCardArea>, Vec<()>) {
+) -> (
+    Vec<crate::app::state::WorkspaceCardArea>,
+    Vec<crate::app::state::HibernatedCardArea>,
+) {
     let ws_area = workspace_list_rect(area, app.sidebar_section_split);
     if ws_area == Rect::default() {
         return (Vec::new(), Vec::new());
@@ -674,7 +677,6 @@ pub(crate) fn compute_workspace_list_areas(
     let mut row_y = body.y;
     let body_bottom = body.y + body.height;
     let mut cards = Vec::new();
-    let headers = Vec::new();
 
     let entries = workspace_list_entries(app);
     for (entry_idx, entry) in entries.iter().enumerate().skip(scroll) {
@@ -701,7 +703,24 @@ pub(crate) fn compute_workspace_list_areas(
         }
     }
 
-    (cards, headers)
+    let mut hibernated_cards = Vec::new();
+    if !app.hibernated_workspaces.is_empty() {
+        if row_y < body_bottom {
+            row_y = row_y.saturating_add(1).min(body_bottom);
+        }
+        for (hib_idx, _snap) in app.hibernated_workspaces.iter().enumerate() {
+            if row_y >= body_bottom {
+                break;
+            }
+            hibernated_cards.push(crate::app::state::HibernatedCardArea {
+                hib_idx,
+                rect: Rect::new(body.x, row_y, body.width, 1),
+            });
+            row_y = row_y.saturating_add(1).min(body_bottom);
+        }
+    }
+
+    (cards, hibernated_cards)
 }
 
 pub(crate) fn compute_workspace_card_areas(
@@ -709,6 +728,13 @@ pub(crate) fn compute_workspace_card_areas(
     area: Rect,
 ) -> Vec<crate::app::state::WorkspaceCardArea> {
     compute_workspace_list_areas(app, area).0
+}
+
+pub(crate) fn compute_hibernated_card_areas(
+    app: &AppState,
+    area: Rect,
+) -> Vec<crate::app::state::HibernatedCardArea> {
+    compute_workspace_list_areas(app, area).1
 }
 
 pub(crate) fn workspace_group_chevron_rect(card: &crate::app::state::WorkspaceCardArea) -> Rect {
@@ -1386,6 +1412,26 @@ fn render_workspace_list(
                 workspace_group_chevron_rect(card),
             );
         }
+    }
+
+    for card in &app.view.hibernated_card_areas {
+        if card.rect.y >= list_bottom {
+            continue;
+        }
+        let Some(snap) = app.hibernated_workspaces.get(card.hib_idx) else {
+            continue;
+        };
+        let label = snap.custom_name.as_deref().unwrap_or_else(|| {
+            snap.identity_cwd
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("workspace")
+        });
+        let line = Line::from(vec![
+            Span::styled(" 💤 ", Style::default().fg(p.overlay0)),
+            Span::styled(label, Style::default().fg(p.overlay0).add_modifier(Modifier::DIM)),
+        ]);
+        frame.render_widget(Paragraph::new(line), card.rect);
     }
 
     if let Some(y) = insertion_row.filter(|y| *y < list_bottom) {

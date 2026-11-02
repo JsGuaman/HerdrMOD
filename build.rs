@@ -60,6 +60,14 @@ fn main() {
         .trim()
         .to_string();
 
+    let lib_dir = vendored_dir.join("zig-out/lib");
+    let static_lib_exists = if target.contains("windows-msvc") {
+        lib_dir.join("ghostty-vt-static.lib").exists()
+    } else {
+        lib_dir.join("libghostty-vt.a").exists()
+    };
+
+    if !static_lib_exists || env::var("FORCE_REBUILD_GHOSTTY").is_ok() {
     let zig = env::var("ZIG").unwrap_or_else(|_| "zig".into());
     let mut command = Command::new(zig);
     command
@@ -83,7 +91,7 @@ fn main() {
         "zig build for vendored libghostty-vt failed: {status}"
     );
 
-    let lib_dir = vendored_dir.join("zig-out/lib");
+    }
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     if target.contains("apple-darwin") {
         let static_lib = lib_dir.join("libghostty-vt.a");

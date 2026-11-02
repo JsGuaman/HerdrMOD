@@ -2738,6 +2738,10 @@ impl PaneRuntime {
         })
     }
 
+    pub fn terminal_cursor_state(&self) -> Option<TerminalCursorState> {
+        self.terminal.cursor_state()
+    }
+
     pub fn synchronized_output_active(&self) -> bool {
         self.terminal.synchronized_output_active()
     }

@@ -962,6 +962,18 @@ impl HeadlessServer {
             crate::render_prof::event("full_render_cause.deferred_new_tab");
         }
 
+        if let Some(ws_idx) = self.app.state.request_hibernate_workspace.take() {
+            self.app.hibernate_workspace_idx(ws_idx);
+            needs_render = true;
+            crate::render_prof::event("full_render_cause.deferred_hibernate_workspace");
+        }
+
+        if let Some(hib_idx) = self.app.state.request_restore_hibernated_workspace.take() {
+            self.app.restore_hibernated_workspace(hib_idx);
+            needs_render = true;
+            crate::render_prof::event("full_render_cause.deferred_restore_hibernated_workspace");
+        }
+
         if let Some(ws_idx) = self.app.state.request_new_linked_worktree.take() {
             self.app.open_new_linked_worktree_dialog(ws_idx);
             needs_render = true;
@@ -1291,6 +1303,7 @@ impl HeadlessServer {
 
         let snapshot = crate::persist::capture(
             &self.app.state.workspaces,
+            &self.app.state.hibernated_workspaces,
             &self.app.state.terminals,
             &self.app.terminal_runtimes,
             self.app.state.active,
@@ -6726,6 +6739,7 @@ next_tab = ""
                         text: String::new(),
                         revision: 0,
                         truncated: false,
+                        cursor: None,
                     },
                     120,
                     false,

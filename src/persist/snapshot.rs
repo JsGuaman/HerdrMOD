@@ -12,12 +12,14 @@ use crate::workspace::Workspace;
 pub(super) const SNAPSHOT_VERSION: u32 = 3;
 
 /// Serializable snapshot of the entire herdr session.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionSnapshot {
     /// Format version — used to detect incompatible changes.
     #[serde(default)]
     pub version: u32,
     pub workspaces: Vec<WorkspaceSnapshot>,
+    #[serde(default)]
+    pub hibernated_workspaces: Vec<WorkspaceSnapshot>,
     pub active: Option<usize>,
     pub selected: usize,
     #[serde(default)]
@@ -46,7 +48,7 @@ pub struct TabHistorySnapshot {
     pub panes: HashMap<u32, PaneHistorySnapshot>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkspaceSnapshot {
     #[serde(default)]
     pub id: Option<String>,
@@ -81,7 +83,7 @@ struct LegacyWorkspaceSnapshot {
     root_pane: Option<u32>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TabSnapshot {
     #[serde(default)]
     pub custom_name: Option<String>,
@@ -94,7 +96,7 @@ pub struct TabSnapshot {
     pub root_pane: Option<u32>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PaneSnapshot {
     pub cwd: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,14 +119,14 @@ pub struct PaneAgentSessionSnapshot {
     pub value: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PaneHistorySnapshot {
     pub ansi: String,
     pub lines: usize,
 }
 
 /// Serializable BSP tree.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum LayoutSnapshot {
     Pane(u32),
     Split {
@@ -135,7 +137,7 @@ pub enum LayoutSnapshot {
     },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DirectionSnapshot {
     Horizontal,
     Vertical,
@@ -175,6 +177,8 @@ struct RawSessionSnapshot {
     #[serde(default)]
     workspaces: Vec<serde_json::Value>,
     #[serde(default)]
+    hibernated_workspaces: Vec<serde_json::Value>,
+    #[serde(default)]
     active: Option<usize>,
     #[serde(default)]
     selected: usize,
@@ -191,6 +195,11 @@ fn migrate_snapshot(raw: RawSessionSnapshot) -> Result<SessionSnapshot, String> 
         version: raw.version,
         workspaces: raw
             .workspaces
+            .into_iter()
+            .map(migrate_workspace)
+            .collect::<Result<Vec<_>, _>>()?,
+        hibernated_workspaces: raw
+            .hibernated_workspaces
             .into_iter()
             .map(migrate_workspace)
             .collect::<Result<Vec<_>, _>>()?,
@@ -251,6 +260,7 @@ fn first_pane_id_in_layout(layout: &LayoutSnapshot) -> Option<u32> {
 /// Capture the current app state into a serializable snapshot.
 pub fn capture(
     workspaces: &[Workspace],
+    hibernated_workspaces: &[WorkspaceSnapshot],
     terminals: &std::collections::HashMap<
         crate::terminal::TerminalId,
         crate::terminal::TerminalState,
@@ -268,6 +278,7 @@ pub fn capture(
             .iter()
             .map(|workspace| capture_workspace(workspace, terminals, terminal_runtimes))
             .collect(),
+        hibernated_workspaces: hibernated_workspaces.to_vec(),
         active,
         selected,
         sidebar_width: Some(sidebar_width),
@@ -276,7 +287,7 @@ pub fn capture(
     }
 }
 
-fn capture_workspace(
+pub fn capture_workspace(
     ws: &Workspace,
     terminals: &std::collections::HashMap<
         crate::terminal::TerminalId,
@@ -534,6 +545,7 @@ mod tests {
     ) -> SessionSnapshot {
         capture(
             &state.workspaces,
+            &state.hibernated_workspaces,
             &state.terminals,
             terminal_runtimes,
             state.active,
@@ -605,6 +617,7 @@ mod tests {
             sidebar_width: Some(26),
             sidebar_section_split: Some(0.5),
             collapsed_space_keys: std::collections::HashSet::new(),
+            hibernated_workspaces: vec![],
         };
         let json = serde_json::to_string(&snap).unwrap();
         let restored = parse_snapshot(&json).unwrap();
@@ -692,6 +705,7 @@ mod tests {
             sidebar_width: Some(26),
             sidebar_section_split: Some(0.5),
             collapsed_space_keys: std::collections::HashSet::new(),
+            hibernated_workspaces: vec![],
             version: SNAPSHOT_VERSION,
         };
 
@@ -1254,6 +1268,7 @@ mod tests {
             sidebar_width: Some(26),
             sidebar_section_split: Some(0.5),
             collapsed_space_keys: std::collections::HashSet::new(),
+            hibernated_workspaces: vec![],
         };
 
         let json = serde_json::to_string(&snap).unwrap();

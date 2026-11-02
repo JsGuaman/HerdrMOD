@@ -874,6 +874,35 @@ Successful responses look like this:
 }
 ```
 
+`pane.read` returns the snapshot text along with authoritative terminal cursor metadata:
+
+```json
+{
+  "id": "req_1",
+  "result": {
+    "type": "pane_read",
+    "read": {
+      "pane_id": "w1:p1",
+      "workspace_id": "w1",
+      "tab_id": "w1:t1",
+      "source": "visible",
+      "format": "text",
+      "text": "$ ls\n",
+      "revision": 0,
+      "truncated": false,
+      "cursor": {
+        "row": 0,
+        "col": 4,
+        "visible": true,
+        "style": "steady_bar"
+      }
+    }
+  }
+}
+```
+
+The `cursor` field is optional and contains `row` (0-based), `col` (0-based), `visible` (boolean), and `style` (`default`, `blinking_block`, `steady_block`, `blinking_underline`, `steady_underline`, `blinking_bar`, `steady_bar`).
+
 `server.agent_manifests` returns the active agent detection manifest sources and remote update diagnostics without reloading rules:
 
 ```json

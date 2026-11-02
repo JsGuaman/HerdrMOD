@@ -353,6 +353,10 @@ impl TerminalRuntime {
         self.0.cursor_state(area, show_cursor)
     }
 
+    pub fn terminal_cursor_state(&self) -> Option<crate::pane::TerminalCursorState> {
+        self.0.terminal_cursor_state()
+    }
+
     pub fn synchronized_output_active(&self) -> bool {
         self.0.synchronized_output_active()
     }

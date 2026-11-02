@@ -681,4 +681,45 @@ pub struct PaneReadResult {
     pub text: String,
     pub revision: u64,
     pub truncated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<PaneCursorInfo>,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, Default,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum PaneCursorStyle {
+    #[default]
+    Default,
+    BlinkingBlock,
+    SteadyBlock,
+    BlinkingUnderline,
+    SteadyUnderline,
+    BlinkingBar,
+    SteadyBar,
+}
+
+impl PaneCursorStyle {
+    pub fn from_decscusr_shape(shape: u8) -> Self {
+        match shape {
+            1 => Self::BlinkingBlock,
+            2 => Self::SteadyBlock,
+            3 => Self::BlinkingUnderline,
+            4 => Self::SteadyUnderline,
+            5 => Self::BlinkingBar,
+            6 => Self::SteadyBar,
+            _ => Self::Default,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneCursorInfo {
+    pub row: u16,
+    pub col: u16,
+    pub rows: u16,
+    pub cols: u16,
+    pub visible: bool,
+    pub style: PaneCursorStyle,
 }

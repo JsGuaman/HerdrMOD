@@ -140,6 +140,22 @@ pub(super) fn read_terminal_snapshot(
     }
 }
 
+pub(super) fn read_terminal_cursor(
+    terminal: &crate::terminal::TerminalRuntime,
+) -> Option<crate::api::schema::PaneCursorInfo> {
+    terminal.terminal_cursor_state().map(|cursor| {
+        let (rows, cols) = terminal.current_size();
+        crate::api::schema::PaneCursorInfo {
+            row: cursor.y,
+            col: cursor.x,
+            rows,
+            cols,
+            visible: cursor.visible,
+            style: crate::api::schema::PaneCursorStyle::from_decscusr_shape(cursor.shape),
+        }
+    })
+}
+
 pub(crate) fn limit_snapshot_lines(
     text: String,
     limit: Option<usize>,

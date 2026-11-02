@@ -10,10 +10,10 @@ mod restore;
 mod snapshot;
 
 pub use self::io::{clear, clear_history, load, load_history, save};
-pub use self::restore::restore;
+pub use self::restore::{restore, restore_single_workspace};
 #[cfg(unix)]
 pub use self::restore::{handoff_pane_aliases, restore_handoff};
 pub use self::snapshot::{
     capture, capture_history, DirectionSnapshot, LayoutSnapshot, SessionHistorySnapshot,
-    SessionSnapshot, TabSnapshot, WorkspaceSnapshot,
+    SessionSnapshot, TabSnapshot, WorkspaceSnapshot, capture_workspace,
 };

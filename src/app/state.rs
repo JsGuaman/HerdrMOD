@@ -710,6 +710,12 @@ impl Palette {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HibernatedCardArea {
+    pub hib_idx: usize,
+    pub rect: Rect,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceCardArea {
     pub ws_idx: usize,
     pub rect: Rect,
@@ -871,6 +877,7 @@ pub struct ViewState {
     pub layout: ViewLayout,
     pub sidebar_rect: Rect,
     pub workspace_card_areas: Vec<WorkspaceCardArea>,
+    pub hibernated_card_areas: Vec<HibernatedCardArea>,
     pub tab_bar_rect: Rect,
     pub tab_hit_areas: Vec<Rect>,
     pub tab_scroll_left_hit_area: Rect,
@@ -1265,6 +1272,9 @@ pub enum ContextMenuKind {
         has_worktree_children: bool,
         collapsed: bool,
     },
+    HibernatedWorkspace {
+        hib_idx: usize,
+    },
     Tab {
         ws_idx: usize,
         tab_idx: usize,
@@ -1290,16 +1300,16 @@ pub struct ContextMenuState {
 impl ContextMenuState {
     pub fn items(&self) -> Vec<&'static str> {
         match self.kind {
-            ContextMenuKind::Workspace { .. } => vec!["Rename", "Close"],
+            ContextMenuKind::Workspace { .. } => vec!["Rename", "Hibernate", "Close"],
             ContextMenuKind::GitWorkspace {
                 is_linked_worktree: false,
                 has_worktree_children: false,
                 ..
-            } => vec!["Rename", "Close", "New worktree", "Open worktree..."],
+            } => vec!["Rename", "Hibernate", "Close", "New worktree", "Open worktree..."],
             ContextMenuKind::GitWorkspace {
                 is_linked_worktree: true,
                 ..
-            } => vec!["Rename", "Close", "Delete worktree checkout..."],
+            } => vec!["Rename", "Hibernate", "Close", "Delete worktree checkout..."],
             ContextMenuKind::GitWorkspace {
                 is_linked_worktree: false,
                 has_worktree_children: true,
@@ -1307,11 +1317,13 @@ impl ContextMenuState {
                 ..
             } => vec![
                 "Rename",
+                "Hibernate",
                 "Close group",
                 "New worktree",
                 "Open worktree...",
                 if collapsed { "Expand" } else { "Collapse" },
             ],
+            ContextMenuKind::HibernatedWorkspace { .. } => vec!["Restore", "Delete"],
             ContextMenuKind::Tab { .. } => vec!["New tab", "Rename", "Close"],
             ContextMenuKind::Pane {
                 source_pane_id,
@@ -1441,6 +1453,7 @@ pub struct AppState {
     pub(crate) pane_id_aliases: std::collections::HashMap<u32, PaneId>,
     pub(crate) public_pane_id_aliases: std::collections::HashMap<String, PaneId>,
     pub workspaces: Vec<Workspace>,
+    pub hibernated_workspaces: Vec<crate::persist::WorkspaceSnapshot>,
     pub active: Option<usize>,
     pub(crate) previous_pane_focus: Option<PaneFocusTarget>,
     pub selected: usize,
@@ -1453,6 +1466,8 @@ pub struct AppState {
     pub detach_requested: bool,
     pub request_new_workspace: bool,
     pub request_new_tab: bool,
+    pub request_hibernate_workspace: Option<usize>,
+    pub request_restore_hibernated_workspace: Option<usize>,
     pub request_new_linked_worktree: Option<usize>,
     pub request_open_existing_worktree: Option<usize>,
     pub request_new_workspace_cwd: Option<std::path::PathBuf>,
@@ -1832,6 +1847,7 @@ impl AppState {
             pane_id_aliases: std::collections::HashMap::new(),
             public_pane_id_aliases: std::collections::HashMap::new(),
             workspaces: Vec::new(),
+            hibernated_workspaces: Vec::new(),
             active: None,
             previous_pane_focus: None,
             selected: 0,
@@ -1841,6 +1857,8 @@ impl AppState {
             detach_requested: false,
             request_new_workspace: false,
             request_new_tab: false,
+            request_hibernate_workspace: None,
+            request_restore_hibernated_workspace: None,
             request_new_linked_worktree: None,
             request_open_existing_worktree: None,
             request_new_workspace_cwd: None,
@@ -1877,6 +1895,7 @@ impl AppState {
                 layout: ViewLayout::Desktop,
                 sidebar_rect: Rect::default(),
                 workspace_card_areas: Vec::new(),
+                hibernated_card_areas: Vec::new(),
                 tab_bar_rect: Rect::default(),
                 tab_hit_areas: Vec::new(),
                 tab_scroll_left_hit_area: Rect::default(),
@@ -2304,6 +2323,13 @@ impl AppState {
                 | ContextMenuKind::GitWorkspace { ws_idx, .. } => {
                     assert_workspace_index(ws_idx, "context menu workspace")
                 }
+                ContextMenuKind::HibernatedWorkspace { hib_idx } => {
+                    assert!(
+                        hib_idx < self.hibernated_workspaces.len(),
+                        "context menu hibernated workspace {} out of bounds",
+                        hib_idx
+                    );
+                }
                 ContextMenuKind::Tab { ws_idx, tab_idx } => {
                     assert_tab_index(ws_idx, tab_idx, "context menu tab")
                 }
@@ -2634,7 +2660,7 @@ mod tests {
 
         assert_eq!(
             menu.items(),
-            &["Rename", "Close", "Delete worktree checkout..."]
+            &["Rename", "Hibernate", "Close", "Delete worktree checkout..."]
         );
     }
 
@@ -2654,7 +2680,7 @@ mod tests {
 
         assert_eq!(
             menu.items(),
-            &["Rename", "Close", "New worktree", "Open worktree..."]
+            &["Rename", "Hibernate", "Close", "New worktree", "Open worktree..."]
         );
     }
 
@@ -2676,6 +2702,7 @@ mod tests {
             menu.items(),
             &[
                 "Rename",
+                "Hibernate",
                 "Close group",
                 "New worktree",
                 "Open worktree...",

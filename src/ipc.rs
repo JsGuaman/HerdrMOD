@@ -66,12 +66,23 @@ pub(crate) fn bind_local_listener(path: &Path) -> io::Result<LocalListener> {
     #[cfg(windows)]
     {
         use interprocess::local_socket::{prelude::*, GenericNamespaced, ListenerOptions};
+        use interprocess::os::windows::local_socket::ListenerOptionsExt as _;
+        use interprocess::os::windows::security_descriptor::SecurityDescriptor;
+        use widestring::U16CString;
 
         let name = path.to_string_lossy().to_string();
         let name = name.to_ns_name::<GenericNamespaced>()?;
+        // A named pipe created with the library default ACL can reject sibling
+        // processes launched for the same desktop with ERROR_ACCESS_DENIED.
+        // Herdr's API remains local-only; permit authenticated local clients
+        // so the separately-launched TerLAN bridge can reach it.
+        let sddl = U16CString::from_str("D:P(A;;GA;;;SY)(A;;GA;;;OW)(A;;GA;;;AU)")
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+        let security_descriptor = SecurityDescriptor::deserialize(&sddl)?;
         let listener = ListenerOptions::new()
             .name(name)
             .reclaim_name(false)
+            .security_descriptor(security_descriptor)
             .create_sync()?;
         fs::write(path, windows_socket_marker())?;
         Ok(listener)
@@ -153,7 +164,12 @@ pub(crate) fn bind_private_local_listener(path: &Path) -> io::Result<LocalListen
         use interprocess::os::windows::security_descriptor::SecurityDescriptor;
         use widestring::U16CString;
 
-        let sddl = U16CString::from_str("D:P(A;;GA;;;SY)(A;;GA;;;OW)")
+        // `OW` (owner rights) works for an in-process client, but a sibling
+        // process launched from the same Windows desktop (such as TerLAN's
+        // bridge) can still be denied while opening the named pipe.  The API
+        // is intentionally local-only; allow authenticated local processes
+        // to reach it, while the bridge keeps its own network pairing gate.
+        let sddl = U16CString::from_str("D:P(A;;GA;;;SY)(A;;GA;;;OW)(A;;GA;;;AU)")
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
         let security_descriptor = SecurityDescriptor::deserialize(&sddl)?;
         let name = path.to_string_lossy().to_string();

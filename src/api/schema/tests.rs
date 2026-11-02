@@ -599,6 +599,7 @@ fn subscription_event_envelope_round_trips() {
                 text: "auth: received\n".into(),
                 revision: 0,
                 truncated: false,
+                cursor: None,
             },
         }),
     };
@@ -1317,4 +1318,92 @@ fn popup_close_request_round_trips() {
 
     assert_eq!(json["method"], "popup.close");
     assert_eq!(json["params"], serde_json::json!({}));
+}
+
+#[test]
+fn pane_read_result_without_cursor_omits_field() {
+    let result = PaneReadResult {
+        pane_id: "p_1".into(),
+        workspace_id: "w_1".into(),
+        tab_id: "t_1".into(),
+        source: ReadSource::Visible,
+        format: ReadFormat::Text,
+        text: "hello world\n".into(),
+        revision: 1,
+        truncated: false,
+        cursor: None,
+    };
+
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(!json.contains("\"cursor\""));
+    let restored: PaneReadResult = serde_json::from_str(&json).unwrap();
+    assert_eq!(restored, result);
+    assert_eq!(restored.cursor, None);
+}
+
+#[test]
+fn pane_read_result_with_cursor_round_trips() {
+    let result = PaneReadResult {
+        pane_id: "p_1".into(),
+        workspace_id: "w_1".into(),
+        tab_id: "t_1".into(),
+        source: ReadSource::Visible,
+        format: ReadFormat::Text,
+        text: "$ ls\n".into(),
+        revision: 42,
+        truncated: false,
+        cursor: Some(PaneCursorInfo {
+            row: 0,
+            col: 4,
+            rows: 24,
+            cols: 80,
+            visible: true,
+            style: PaneCursorStyle::SteadyBar,
+        }),
+    };
+
+    let json_val = serde_json::to_value(&result).unwrap();
+    assert_eq!(json_val["cursor"]["row"], 0);
+    assert_eq!(json_val["cursor"]["col"], 4);
+    assert_eq!(json_val["cursor"]["visible"], true);
+    assert_eq!(json_val["cursor"]["style"], "steady_bar");
+
+    let restored: PaneReadResult = serde_json::from_value(json_val).unwrap();
+    assert_eq!(restored, result);
+}
+
+#[test]
+fn pane_cursor_style_from_decscusr_shapes() {
+    assert_eq!(
+        PaneCursorStyle::from_decscusr_shape(0),
+        PaneCursorStyle::Default
+    );
+    assert_eq!(
+        PaneCursorStyle::from_decscusr_shape(1),
+        PaneCursorStyle::BlinkingBlock
+    );
+    assert_eq!(
+        PaneCursorStyle::from_decscusr_shape(2),
+        PaneCursorStyle::SteadyBlock
+    );
+    assert_eq!(
+        PaneCursorStyle::from_decscusr_shape(3),
+        PaneCursorStyle::BlinkingUnderline
+    );
+    assert_eq!(
+        PaneCursorStyle::from_decscusr_shape(4),
+        PaneCursorStyle::SteadyUnderline
+    );
+    assert_eq!(
+        PaneCursorStyle::from_decscusr_shape(5),
+        PaneCursorStyle::BlinkingBar
+    );
+    assert_eq!(
+        PaneCursorStyle::from_decscusr_shape(6),
+        PaneCursorStyle::SteadyBar
+    );
+    assert_eq!(
+        PaneCursorStyle::from_decscusr_shape(99),
+        PaneCursorStyle::Default
+    );
 }

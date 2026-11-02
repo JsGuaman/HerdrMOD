@@ -316,6 +316,23 @@ impl AppState {
         })
     }
 
+    pub(super) fn hibernated_workspace_at_row(&self, row: u16) -> Option<usize> {
+        let footer = self.sidebar_footer_rect();
+        if footer == Rect::default() {
+            return None;
+        }
+
+        let cards = if self.view.hibernated_card_areas.is_empty() {
+            crate::ui::compute_hibernated_card_areas(self, self.view.sidebar_rect)
+        } else {
+            self.view.hibernated_card_areas.clone()
+        };
+
+        cards.iter().find_map(|card| {
+            (row >= card.rect.y && row < card.rect.y + card.rect.height).then_some(card.hib_idx)
+        })
+    }
+
     pub(super) fn collapsed_workspace_at_row(&self, row: u16) -> Option<usize> {
         if !self.sidebar_collapsed {
             return None;

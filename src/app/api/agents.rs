@@ -166,6 +166,7 @@ impl App {
                     text: snapshot.text,
                     revision: 0,
                     truncated: snapshot.truncated,
+                    cursor: crate::app::api_helpers::read_terminal_cursor(pane),
                 },
             },
         )

@@ -600,6 +600,11 @@ impl AppState {
                         return None;
                     }
 
+                    if let Some(hib_idx) = self.hibernated_workspace_at_row(mouse.row) {
+                        self.request_restore_hibernated_workspace = Some(hib_idx);
+                        return None;
+                    }
+
                     if self.on_agent_panel_sort_toggle(mouse.column, mouse.row) {
                         self.agent_panel_sort = match self.agent_panel_sort {
                             AgentPanelSort::Spaces => AgentPanelSort::Priority,
@@ -1079,6 +1084,14 @@ impl AppState {
                         .unwrap_or(ContextMenuKind::Workspace { ws_idx: idx });
                     self.context_menu = Some(ContextMenuState {
                         kind,
+                        x: mouse.column,
+                        y: mouse.row,
+                        list: MenuListState::new(0),
+                    });
+                    self.mode = Mode::ContextMenu;
+                } else if let Some(hib_idx) = self.hibernated_workspace_at_row(mouse.row) {
+                    self.context_menu = Some(ContextMenuState {
+                        kind: ContextMenuKind::HibernatedWorkspace { hib_idx },
                         x: mouse.column,
                         y: mouse.row,
                         list: MenuListState::new(0),

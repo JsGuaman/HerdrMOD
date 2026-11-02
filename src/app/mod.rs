@@ -412,6 +412,7 @@ impl App {
         let mut restored_terminal_runtimes = crate::terminal::TerminalRuntimeRegistry::new();
         let (
             workspaces,
+            hibernated_workspaces,
             active,
             selected,
             sidebar_width,
@@ -420,6 +421,7 @@ impl App {
             collapsed_space_keys,
         ) = if no_session {
             (
+                Vec::new(),
                 Vec::new(),
                 None,
                 0,
@@ -434,6 +436,7 @@ impl App {
                 .pane_history
                 .then(crate::persist::load_history)
                 .flatten();
+            let hibernated = snap.hibernated_workspaces.clone();
             let (ws, terminals, terminal_runtimes) = crate::persist::restore(
                 &snap,
                 history.as_ref(),
@@ -453,6 +456,7 @@ impl App {
                 crate::logging::session_restored(0, "empty");
                 (
                     Vec::new(),
+                    hibernated,
                     None,
                     0,
                     snap.sidebar_width.unwrap_or(config.ui.sidebar_width),
@@ -470,6 +474,7 @@ impl App {
                 let selected = snap.selected.min(ws.len().saturating_sub(1));
                 (
                     ws,
+                    hibernated,
                     active,
                     selected,
                     snap.sidebar_width.unwrap_or(config.ui.sidebar_width),
@@ -484,6 +489,7 @@ impl App {
             }
         } else {
             (
+                Vec::new(),
                 Vec::new(),
                 None,
                 0,
@@ -555,6 +561,9 @@ impl App {
             pane_id_aliases: std::collections::HashMap::new(),
             public_pane_id_aliases: std::collections::HashMap::new(),
             workspaces,
+            hibernated_workspaces,
+            request_hibernate_workspace: None,
+            request_restore_hibernated_workspace: None,
             active,
             previous_pane_focus: None,
             selected,
@@ -609,6 +618,7 @@ impl App {
                 layout: state::ViewLayout::Desktop,
                 sidebar_rect: Rect::default(),
                 workspace_card_areas: Vec::new(),
+                hibernated_card_areas: Vec::new(),
                 tab_bar_rect: Rect::default(),
                 tab_hit_areas: Vec::new(),
                 tab_scroll_left_hit_area: Rect::default(),
@@ -1017,6 +1027,16 @@ impl App {
                         env: Default::default(),
                     },
                 );
+                needs_render = true;
+            }
+
+            if let Some(ws_idx) = self.state.request_hibernate_workspace.take() {
+                self.hibernate_workspace_idx(ws_idx);
+                needs_render = true;
+            }
+
+            if let Some(hib_idx) = self.state.request_restore_hibernated_workspace.take() {
+                self.restore_hibernated_workspace(hib_idx);
                 needs_render = true;
             }
 
@@ -1973,6 +1993,49 @@ impl App {
     /// Delegates to the same mouse handling logic used in the monolithic
     /// mode (hit-testing against the rendered UI), which works because
     /// the server's AppState maintains view geometry from virtual rendering.
+    pub(crate) fn hibernate_workspace_idx(&mut self, ws_idx: usize) {
+        let Some(ws) = self.state.workspaces.get(ws_idx) else {
+            return;
+        };
+        let snap = crate::persist::capture_workspace(ws, &self.state.terminals, &self.terminal_runtimes);
+        self.state.hibernated_workspaces.push(snap);
+        self.close_workspace_idx_via_api(ws_idx);
+        self.state.mark_session_dirty();
+    }
+
+    pub(crate) fn restore_hibernated_workspace(&mut self, hib_idx: usize) {
+        if hib_idx >= self.state.hibernated_workspaces.len() {
+            return;
+        }
+        let snap = self.state.hibernated_workspaces.remove(hib_idx);
+        let restored = crate::persist::restore_single_workspace(
+            &snap,
+            self.state.headless_size.1,
+            self.state.headless_size.0,
+            self.state.pane_scrollback_limit_bytes,
+            &self.state.default_shell,
+            self.state.shell_mode,
+            true,
+            self.event_tx.clone(),
+            self.render_notify.clone(),
+            self.render_dirty.clone(),
+        );
+
+        if let Some((workspace, restored_terminals, restored_runtimes)) = restored {
+            for terminal in restored_terminals {
+                self.state.terminals.insert(terminal.id.clone(), terminal);
+            }
+            for (id, runtime) in restored_runtimes {
+                self.terminal_runtimes.insert(id, runtime);
+            }
+            self.state.workspaces.push(workspace);
+            let new_idx = self.state.workspaces.len().saturating_sub(1);
+            self.state.active = Some(new_idx);
+            self.state.selected = new_idx;
+            self.state.mark_session_dirty();
+        }
+    }
+
     fn handle_mouse_event_headless(
         &mut self,
         source_id: InputSourceId,

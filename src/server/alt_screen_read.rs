@@ -502,6 +502,7 @@ mod tests {
                 text: String::new(),
                 revision: 0,
                 truncated: false,
+                cursor: None,
             },
             lines,
             false,

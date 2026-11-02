@@ -868,6 +868,7 @@ fn capture_snapshot(state: &AppState) -> crate::persist::SessionSnapshot {
     let terminal_runtimes = crate::terminal::TerminalRuntimeRegistry::new();
     crate::persist::capture(
         &state.workspaces,
+        &state.hibernated_workspaces,
         &state.terminals,
         &terminal_runtimes,
         state.active,

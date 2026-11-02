@@ -48,7 +48,7 @@ type RestoredSession = (
     HashMap<TerminalId, TerminalState>,
     HashMap<TerminalId, TerminalRuntime>,
 );
-type RestoredWorkspace = (
+pub type RestoredWorkspace = (
     Workspace,
     Vec<TerminalState>,
     HashMap<TerminalId, TerminalRuntime>,
@@ -301,6 +301,43 @@ fn restore_with_imports_and_failures(
     }
     crate::workspace::reserve_workspace_ids(&workspaces);
     ((workspaces, terminals, terminal_runtimes), failed_imports)
+}
+
+pub fn restore_single_workspace(
+    snap: &WorkspaceSnapshot,
+    rows: u16,
+    cols: u16,
+    scrollback_limit_bytes: usize,
+    default_shell: &str,
+    shell_mode: crate::config::ShellModeConfig,
+    resume_agents_on_restore: bool,
+    events: mpsc::Sender<AppEvent>,
+    render_notify: Arc<Notify>,
+    render_dirty: Arc<RenderSignal>,
+) -> Option<RestoredWorkspace> {
+    let mut imported_panes = HashMap::new();
+    let mut resumed_agent_sessions = HashSet::new();
+    let runtime_context = RestoreRuntimeContext {
+        scrollback_limit_bytes,
+        shell_config: crate::pane::PaneShellConfig::new(default_shell, shell_mode),
+        resume_agents_on_restore,
+        events,
+        render_notify,
+        render_dirty,
+    };
+    let (restored, _) = restore_workspace(
+        snap,
+        None,
+        rows,
+        cols,
+        &runtime_context,
+        &mut resumed_agent_sessions,
+        &mut imported_panes,
+    );
+    if let Some((ref workspace, _, _)) = restored {
+        crate::workspace::reserve_workspace_ids(std::slice::from_ref(workspace));
+    }
+    restored
 }
 
 fn restore_workspace(
@@ -1211,6 +1248,7 @@ mod tests {
             sidebar_width: None,
             sidebar_section_split: None,
             collapsed_space_keys: Default::default(),
+            hibernated_workspaces: vec![],
         };
         let (events, _event_rx) = mpsc::channel(4);
 
@@ -1304,6 +1342,7 @@ mod tests {
             sidebar_width: None,
             sidebar_section_split: None,
             collapsed_space_keys: Default::default(),
+            hibernated_workspaces: vec![],
         };
         let (events, _event_rx) = mpsc::channel(4);
 
@@ -1411,6 +1450,7 @@ mod tests {
             sidebar_width: None,
             sidebar_section_split: None,
             collapsed_space_keys: Default::default(),
+            hibernated_workspaces: vec![],
         };
         let (events, _event_rx) = mpsc::channel(4);
 
@@ -1522,6 +1562,7 @@ mod tests {
             sidebar_width: None,
             sidebar_section_split: None,
             collapsed_space_keys: Default::default(),
+            hibernated_workspaces: vec![],
         };
         let (events, _event_rx) = mpsc::channel(4);
 
@@ -1716,6 +1757,7 @@ mod tests {
             sidebar_width: Some(26),
             sidebar_section_split: Some(0.5),
             collapsed_space_keys: Default::default(),
+            hibernated_workspaces: vec![],
         };
         (snapshot, history)
     }
