@@ -349,7 +349,7 @@ fn capture_tab(
             })
             .unwrap_or_default();
         let launch_argv = terminal.and_then(|terminal| terminal.launch_argv.clone());
-        let agent_session = terminal.and_then(|terminal| {
+        let mut agent_session = terminal.and_then(|terminal| {
             if let Some(authority) = terminal.hook_authority.as_ref() {
                 if let Some(session_ref) = authority.session_ref.as_ref() {
                     return Some(PaneAgentSessionSnapshot {
@@ -370,6 +370,21 @@ fn capture_tab(
                     value: session.session_ref.value.clone(),
                 })
         });
+        if agent_session.is_none() {
+            if let Some(terminal) = terminal {
+                if terminal.detected_agent == Some(crate::detect::Agent::Antigravity)
+                    || terminal.agent_name.as_deref() == Some("agy")
+                    || terminal.agent_name.as_deref() == Some("antigravity")
+                {
+                    agent_session = Some(PaneAgentSessionSnapshot {
+                        source: "herdr:antigravity_cli".into(),
+                        agent: "agy".into(),
+                        kind: crate::agent_resume::AgentSessionRefKind::Id,
+                        value: "continue".into(),
+                    });
+                }
+            }
+        }
         panes.insert(
             id.raw(),
             PaneSnapshot {
@@ -1187,6 +1202,35 @@ mod tests {
             crate::agent_resume::AgentSessionRefKind::Id
         );
         assert_eq!(agent_session.value, "opencode-session");
+    }
+
+    #[test]
+    fn capture_contract_falls_back_to_antigravity_continue() {
+        let mut state = state_with_workspaces(&["one"]);
+        let root = state.workspaces[0].tabs[0].root_pane;
+        state.ensure_test_terminals();
+        let terminal_id = state.workspaces[0].tabs[0].panes[&root]
+            .attached_terminal_id
+            .clone();
+        state
+            .terminals
+            .get_mut(&terminal_id)
+            .unwrap()
+            .detected_agent = Some(crate::detect::Agent::Antigravity);
+
+        let snapshot = capture_from_state(&state);
+        let agent_session = snapshot.workspaces[0].tabs[0].panes[&root.raw()]
+            .agent_session
+            .as_ref()
+            .expect("detected antigravity agent should fall back to continue session");
+
+        assert_eq!(agent_session.source, "herdr:antigravity_cli");
+        assert_eq!(agent_session.agent, "agy");
+        assert_eq!(
+            agent_session.kind,
+            crate::agent_resume::AgentSessionRefKind::Id
+        );
+        assert_eq!(agent_session.value, "continue");
     }
 
     #[test]

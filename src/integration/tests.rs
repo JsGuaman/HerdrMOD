@@ -3948,7 +3948,7 @@ fn install_antigravity_cli_rewrites_stale_herdr_block() {
     // install is migrated to session-only rather than merged with.
     assert_eq!(
         block.keys().map(String::as_str).collect::<Vec<_>>(),
-        vec!["PreInvocation"],
+        vec!["PreInvocation", "SessionStart"],
         "stale lifecycle events should be gone"
     );
     let entries = block

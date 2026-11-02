@@ -198,11 +198,15 @@ pub fn plan(source: &str, agent: &str, session_ref: &AgentSessionRef) -> Option<
             ]
         }
         ("herdr:antigravity_cli", "agy", AgentSessionRefKind::Id) => {
-            vec![
-                "agy".into(),
-                "--conversation".into(),
-                session_ref.value.clone(),
-            ]
+            if session_ref.value == "continue" || session_ref.value.is_empty() {
+                vec!["agy".into(), "-c".into()]
+            } else {
+                vec![
+                    "agy".into(),
+                    "--conversation".into(),
+                    session_ref.value.clone(),
+                ]
+            }
         }
         ("herdr:grok", "grok", AgentSessionRefKind::Id) => {
             vec!["grok".into(), "--resume".into(), session_ref.value.clone()]
@@ -217,7 +221,13 @@ pub fn plan(source: &str, agent: &str, session_ref: &AgentSessionRef) -> Option<
     })
 }
 
+static NEXT_CONTINUE_KEY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 pub fn dedupe_key(source: &str, agent: &str, session_ref: &AgentSessionRef) -> String {
+    if session_ref.value == "continue" {
+        let id = NEXT_CONTINUE_KEY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        return format!("{source}\u{0}{agent}\u{0}{:?}\u{0}continue#{id}", session_ref.kind);
+    }
     format!(
         "{source}\u{0}{agent}\u{0}{:?}\u{0}{}",
         session_ref.kind, session_ref.value
@@ -756,5 +766,35 @@ mod tests {
             &AgentSessionRef::path(&agy_session).unwrap()
         )
         .is_none());
+    }
+
+    #[test]
+    fn plan_antigravity_cli_resume() {
+        let plan_with_id = plan(
+            "herdr:antigravity_cli",
+            "agy",
+            &AgentSessionRef::id("test-conv-123").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            plan_with_id.argv,
+            vec!["agy", "--conversation", "test-conv-123"]
+        );
+
+        let plan_continue = plan(
+            "herdr:antigravity_cli",
+            "agy",
+            &AgentSessionRef::id("continue").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(plan_continue.argv, vec!["agy", "-c"]);
+
+        let plan_continue_2 = plan(
+            "herdr:antigravity_cli",
+            "agy",
+            &AgentSessionRef::id("continue").unwrap(),
+        )
+        .unwrap();
+        assert_ne!(plan_continue.dedupe_key, plan_continue_2.dedupe_key);
     }
 }
