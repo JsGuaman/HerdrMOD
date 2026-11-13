@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 mod dialogs;
+pub(crate) mod file_tree;
 mod keybind_help;
 mod menus;
 mod mobile;
@@ -234,8 +235,35 @@ fn compute_view_internal(
             .clamp(app.sidebar_min_width, app.sidebar_max_width)
     };
 
-    let [sidebar_area, main_area] =
-        Layout::horizontal([Constraint::Length(sidebar_w), Constraint::Min(1)]).areas(area);
+    let active_cwd = active_pane_cwd_for_file_tree(app, terminal_runtimes);
+    app.file_tree.sync_pane_cwd(active_cwd);
+    app.file_tree.maybe_periodic_refresh();
+
+    let file_tree_w = if !app.file_tree_visible {
+        0
+    } else if app.file_tree_collapsed {
+        if area.width >= sidebar_w + 16 {
+            self::file_tree::COLLAPSED_FILE_TREE_WIDTH
+        } else {
+            0
+        }
+    } else {
+        let max_for_tree = area.width.saturating_sub(sidebar_w + 20);
+        if max_for_tree >= 16 {
+            app.file_tree_width
+                .clamp(app.file_tree_min_width, app.file_tree_max_width)
+                .min(max_for_tree)
+        } else {
+            0
+        }
+    };
+
+    let [sidebar_area, main_area, file_tree_area] = Layout::horizontal([
+        Constraint::Length(sidebar_w),
+        Constraint::Min(1),
+        Constraint::Length(file_tree_w),
+    ])
+    .areas(area);
 
     let (tab_bar_rect, terminal_area) = app
         .active
@@ -310,6 +338,7 @@ fn compute_view_internal(
     app.view = crate::app::ViewState {
         layout: ViewLayout::Desktop,
         sidebar_rect: sidebar_area,
+        file_tree_rect: file_tree_area,
         workspace_card_areas,
         hibernated_card_areas,
         tab_bar_rect,
@@ -374,6 +403,7 @@ fn compute_mobile_view(
     app.view = crate::app::ViewState {
         layout: ViewLayout::Mobile,
         sidebar_rect: Rect::default(),
+        file_tree_rect: Rect::default(),
         workspace_card_areas: Vec::new(),
         hibernated_card_areas: Vec::new(),
         tab_bar_rect: Rect::default(),
@@ -466,6 +496,17 @@ pub fn render_with_runtime_registry(
     }
 }
 
+fn active_pane_cwd_for_file_tree(
+    app: &AppState,
+    terminal_runtimes: &TerminalRuntimeRegistry,
+) -> Option<std::path::PathBuf> {
+    let ws = app.active.and_then(|i| app.workspaces.get(i))?;
+    let tab = ws.tabs.get(ws.active_tab_index())?;
+    let pane_id = ws.focused_pane_id()?;
+    tab.cwd_for_pane(pane_id, &app.terminals, terminal_runtimes)
+        .or_else(|| ws.resolved_identity_cwd_from(&app.terminals, terminal_runtimes))
+}
+
 fn render_navigation_chrome(
     app: &AppState,
     terminal_runtimes: &TerminalRuntimeRegistry,
@@ -473,11 +514,16 @@ fn render_navigation_chrome(
 ) {
     if app.view.layout == ViewLayout::Mobile {
         render_mobile_header(app, terminal_runtimes, frame, app.view.mobile_header_rect);
-    } else if app.view.sidebar_rect.width > 0 {
-        if app.sidebar_collapsed {
-            render_sidebar_collapsed(app, frame, app.view.sidebar_rect);
-        } else {
-            render_sidebar(app, terminal_runtimes, frame, app.view.sidebar_rect);
+    } else {
+        if app.view.sidebar_rect.width > 0 {
+            if app.sidebar_collapsed {
+                render_sidebar_collapsed(app, frame, app.view.sidebar_rect);
+            } else {
+                render_sidebar(app, terminal_runtimes, frame, app.view.sidebar_rect);
+            }
+        }
+        if app.view.file_tree_rect.width > 0 {
+            self::file_tree::render_file_tree(app, frame, app.view.file_tree_rect);
         }
     }
 }

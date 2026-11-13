@@ -14,6 +14,7 @@ mod api_helpers;
 pub(crate) use api_helpers::limit_snapshot_lines;
 mod config_io;
 mod creation;
+pub(crate) mod file_tree;
 mod git_refresh;
 mod ids;
 mod input;
@@ -127,6 +128,7 @@ pub struct App {
     pub(crate) pending_api_worktree_remove_paths: HashMap<std::path::PathBuf, u64>,
     pub(crate) next_api_worktree_operation_id: u64,
     pub(crate) last_sidebar_divider_click: Option<Instant>,
+    pub(crate) last_file_tree_divider_click: Option<Instant>,
     pub(crate) last_pane_click: Option<PaneClickState>,
     pub(crate) pending_url_click_sources: HashSet<InputSourceId>,
     pub(crate) next_resize_poll: Instant,
@@ -617,6 +619,7 @@ impl App {
             view: state::ViewState {
                 layout: state::ViewLayout::Desktop,
                 sidebar_rect: Rect::default(),
+                file_tree_rect: Rect::default(),
                 workspace_card_areas: Vec::new(),
                 hibernated_card_areas: Vec::new(),
                 tab_bar_rect: Rect::default(),
@@ -659,6 +662,13 @@ impl App {
             sidebar_collapsed: config.ui.sidebar_start_collapsed,
             sidebar_collapsed_mode: config.ui.sidebar_collapsed_mode,
             sidebar_section_split,
+            default_file_tree_width: 30,
+            file_tree_width: 30,
+            file_tree_min_width: 20,
+            file_tree_max_width: 56,
+            file_tree_collapsed: false,
+            file_tree_visible: true,
+            file_tree: file_tree::FileTreeState::default(),
             agent_panel_sort,
             status_indicators: config.ui.status_indicators,
             agent_view_override: None,
@@ -788,6 +798,7 @@ impl App {
             pending_api_worktree_remove_paths: HashMap::new(),
             next_api_worktree_operation_id: 1,
             last_sidebar_divider_click: None,
+            last_file_tree_divider_click: None,
             last_pane_click: None,
             pending_url_click_sources: HashSet::new(),
             next_resize_poll: Instant::now() + RESIZE_POLL_INTERVAL,

@@ -91,7 +91,12 @@ impl App {
         }
 
         match self.state.mode {
-            Mode::Terminal => return self.handle_terminal_key(key).await,
+            Mode::Terminal => {
+                if self.state.file_tree.focused && self.handle_file_tree_key(&key_event) {
+                    return None;
+                }
+                return self.handle_terminal_key(key).await;
+            }
             Mode::Prefix => self.handle_prefix_key(key),
             Mode::Navigate => self.handle_navigate_key(key),
             Mode::Copy => self.handle_copy_mode_key(key),
@@ -121,6 +126,117 @@ impl App {
             },
         }
         None
+    }
+
+    fn handle_file_tree_key(&mut self, key: &KeyEvent) -> bool {
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            || key.modifiers.contains(KeyModifiers::ALT)
+        {
+            return false;
+        }
+        let layout = crate::ui::file_tree::compute_file_tree_layout(
+            self.state.view.file_tree_rect,
+            &self.state.file_tree,
+            self.state.file_tree_collapsed,
+        );
+        let viewport = layout.list_rect.height.max(1) as usize;
+        match key.code {
+            KeyCode::Esc => {
+                self.state.file_tree.focused = false;
+                true
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.state.file_tree.move_selection(-1, viewport);
+                true
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.state.file_tree.move_selection(1, viewport);
+                true
+            }
+            KeyCode::PageUp => {
+                self.state
+                    .file_tree
+                    .move_selection(-(viewport as isize), viewport);
+                true
+            }
+            KeyCode::PageDown => {
+                self.state
+                    .file_tree
+                    .move_selection(viewport as isize, viewport);
+                true
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                self.state.file_tree.expand_selected();
+                true
+            }
+            KeyCode::Left | KeyCode::Char('h') => {
+                self.state.file_tree.collapse_or_go_up();
+                true
+            }
+            KeyCode::Backspace => {
+                self.state.file_tree.go_up();
+                true
+            }
+            KeyCode::Char(' ') => {
+                if let Some(entry) = self.state.file_tree.selected_entry().cloned() {
+                    if entry.is_dir && !entry.is_parent_link {
+                        self.state.file_tree.toggle_expand(&entry.path);
+                    }
+                }
+                true
+            }
+            KeyCode::Enter => {
+                if let Some(entry) = self.state.file_tree.selected_entry().cloned() {
+                    if entry.is_parent_link {
+                        self.state.file_tree.go_up();
+                    } else if entry.is_dir {
+                        self.state.file_tree.enter_dir(entry.path);
+                    } else {
+                        self.open_file_tree_path(&entry.path);
+                    }
+                }
+                true
+            }
+            KeyCode::Char('r') => {
+                self.state.file_tree.refresh();
+                true
+            }
+            KeyCode::Char('e') => {
+                if let Some(dir) = self.state.file_tree.current_explorer_dir().cloned() {
+                    self.open_in_file_explorer(&dir);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn report_file_tree_open_result(
+        &mut self,
+        title: &str,
+        target: &std::path::Path,
+        result: std::io::Result<Option<std::process::Child>>,
+    ) {
+        if let Err(err) = result {
+            warn!(path = %target.display(), error = %err, "{title}");
+            self.state.toast = Some(crate::app::state::ToastNotification {
+                kind: crate::app::state::ToastKind::NeedsAttention,
+                title: title.to_string(),
+                context: format!("{}: {err}", target.display()),
+                position: None,
+                target: None,
+            });
+        }
+    }
+
+    fn open_file_tree_path(&mut self, path: &std::path::Path) {
+        let res = crate::platform::open_path(path);
+        self.report_file_tree_open_result("failed to open file", path, res);
+    }
+
+    fn open_in_file_explorer(&mut self, dir: &std::path::Path) {
+        let res = crate::platform::open_in_file_explorer(dir);
+        self.report_file_tree_open_result("failed to open explorer", dir, res);
     }
 
     pub(crate) fn handle_text_commit_headless(&mut self, text: &str) {
@@ -380,6 +496,22 @@ impl App {
             }
         }
 
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+            && self.state.on_file_tree_divider(mouse.column, mouse.row)
+        {
+            let now = std::time::Instant::now();
+            let is_double_click = self
+                .last_file_tree_divider_click
+                .is_some_and(|last| now.duration_since(last) <= super::SIDEBAR_DOUBLE_CLICK_WINDOW);
+            self.last_file_tree_divider_click = Some(now);
+
+            if is_double_click {
+                self.state.file_tree_width = self.state.default_file_tree_width;
+                self.state.drag = None;
+                return;
+            }
+        }
+
         if self.handle_modified_url_click(source_id, mouse) {
             return;
         }
@@ -446,6 +578,8 @@ impl App {
                     MouseAction::ContextMenu { menu, idx } => {
                         self.apply_context_menu_action_via_api(menu, idx)
                     }
+                    MouseAction::OpenFileTreePath(path) => self.open_file_tree_path(&path),
+                    MouseAction::OpenInFileExplorer(dir) => self.open_in_file_explorer(&dir),
                 }
             }
             if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))

@@ -1918,6 +1918,33 @@ pub fn open_url(url: &str) -> std::io::Result<Option<std::process::Child>> {
     }
 }
 
+fn clean_windows_path(path: &std::path::Path) -> String {
+    let s = path.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{}", rest)
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        s.into_owned()
+    }
+}
+
+pub fn open_path(path: &std::path::Path) -> std::io::Result<Option<std::process::Child>> {
+    let cleaned = clean_windows_path(path);
+    open_url(&cleaned)
+}
+
+pub fn open_in_file_explorer(dir: &std::path::Path) -> std::io::Result<Option<std::process::Child>> {
+    let cleaned = clean_windows_path(dir);
+    std::process::Command::new("explorer.exe")
+        .arg(&cleaned)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(Some)
+}
+
 pub fn read_clipboard_image() -> Option<ClipboardImage> {
     for attempt in 0..10 {
         if unsafe { OpenClipboard(null_mut()) } != 0 {

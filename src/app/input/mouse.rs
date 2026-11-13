@@ -61,6 +61,8 @@ pub(super) enum MouseAction {
         menu: ContextMenuState,
         idx: usize,
     },
+    OpenFileTreePath(std::path::PathBuf),
+    OpenInFileExplorer(std::path::PathBuf),
 }
 
 enum MobileMouseResult {
@@ -190,8 +192,15 @@ impl AppState {
             && mouse.column < sidebar.x + sidebar.width
             && mouse.row >= sidebar.y
             && mouse.row < sidebar.y + sidebar.height;
+        let file_tree_rect = self.view.file_tree_rect;
+        let in_file_tree = rect_contains(file_tree_rect, mouse.column, mouse.row);
 
-        if self.handle_right_click_passthrough(terminal_runtimes, source_id, mouse, in_sidebar) {
+        if self.handle_right_click_passthrough(
+            terminal_runtimes,
+            source_id,
+            mouse,
+            in_sidebar || in_file_tree,
+        ) {
             return None;
         }
 
@@ -226,6 +235,9 @@ impl AppState {
                 self.selection = None;
                 self.selection_autoscroll = None;
                 self.clear_chrome_press(source_id);
+                if !in_file_tree {
+                    self.file_tree.focused = false;
+                }
 
                 if self.mode == Mode::ConfirmClose {
                     let popup = self.confirm_close_rect();
@@ -439,7 +451,15 @@ impl AppState {
                     return None;
                 }
 
-                if !in_sidebar {
+                if in_file_tree {
+                    if let Some(action) = self.handle_file_tree_mouse_down(mouse.column, mouse.row)
+                    {
+                        return Some(action);
+                    }
+                    return None;
+                }
+
+                if !in_sidebar && !in_file_tree {
                     if let Some(border) = self.find_border_at(mouse.column, mouse.row) {
                         let grab_offset = match border.direction {
                             Direction::Horizontal => border.pos.saturating_sub(mouse.column),
@@ -827,6 +847,31 @@ impl AppState {
                         DragTarget::SidebarSectionDivider => {
                             self.set_sidebar_section_split(mouse.row);
                         }
+                        DragTarget::FileTreeDivider => {
+                            self.set_manual_file_tree_width(mouse.column);
+                        }
+                        DragTarget::FileTreeScrollbar { grab_row_offset } => {
+                            let layout = crate::ui::file_tree::compute_file_tree_layout(
+                                self.view.file_tree_rect,
+                                &self.file_tree,
+                                self.file_tree_collapsed,
+                            );
+                            if let Some(sb_rect) = layout.scrollbar_rect {
+                                let metrics = crate::ui::file_tree::file_tree_scroll_metrics(
+                                    self.file_tree.entries.len(),
+                                    layout.list_rect.height as usize,
+                                    self.file_tree.scroll,
+                                );
+                                let offset_from_bottom = crate::ui::scrollbar_offset_from_drag_row(
+                                    metrics,
+                                    sb_rect,
+                                    mouse.row,
+                                    *grab_row_offset,
+                                );
+                                self.file_tree.scroll =
+                                    metrics.max_offset_from_bottom.saturating_sub(offset_from_bottom);
+                            }
+                        }
                         DragTarget::ReleaseNotesScrollbar { .. }
                         | DragTarget::ProductAnnouncementScrollbar { .. }
                         | DragTarget::KeybindHelpScrollbar { .. } => {}
@@ -933,7 +978,7 @@ impl AppState {
             }
 
             MouseEventKind::Up(MouseButton::Middle) | MouseEventKind::Drag(MouseButton::Middle)
-                if !in_sidebar =>
+                if !in_sidebar && !in_file_tree =>
             {
                 if let Some(info) = self.pane_mouse_target(mouse.column, mouse.row).cloned() {
                     let _ = self.forward_pane_mouse_button(terminal_runtimes, &info, mouse);
@@ -972,16 +1017,37 @@ impl AppState {
             }
 
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
-                if !in_sidebar && self.scroll_selection_with_wheel(terminal_runtimes, mouse) => {}
+                if !in_sidebar
+                    && !in_file_tree
+                    && self.scroll_selection_with_wheel(terminal_runtimes, mouse) => {}
 
-            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown if !in_sidebar => {
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+                if !in_sidebar && !in_file_tree =>
+            {
                 self.selection = None;
                 self.selection_autoscroll = None;
                 self.handle_terminal_wheel(terminal_runtimes, mouse);
             }
 
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+                if in_file_tree && !self.file_tree_collapsed =>
+            {
+                let layout = crate::ui::file_tree::compute_file_tree_layout(
+                    self.view.file_tree_rect,
+                    &self.file_tree,
+                    self.file_tree_collapsed,
+                );
+                let delta = match mouse.kind {
+                    MouseEventKind::ScrollUp => -3,
+                    MouseEventKind::ScrollDown => 3,
+                    _ => 0,
+                };
+                self.file_tree
+                    .scroll_by(delta, layout.list_rect.height as usize);
+            }
+
             MouseEventKind::ScrollLeft | MouseEventKind::ScrollRight
-                if self.mode == Mode::Terminal && !in_sidebar =>
+                if self.mode == Mode::Terminal && !in_sidebar && !in_file_tree =>
             {
                 if let Some(info) = self.pane_at(mouse.column, mouse.row).cloned() {
                     self.forward_pane_reported_wheel(terminal_runtimes, &info, mouse);
@@ -1034,7 +1100,7 @@ impl AppState {
                 }
             }
 
-            MouseEventKind::Moved if self.mode == Mode::Terminal && !in_sidebar => {
+            MouseEventKind::Moved if self.mode == Mode::Terminal && !in_sidebar && !in_file_tree => {
                 if let Some(info) = self.pane_at(mouse.column, mouse.row).cloned() {
                     let _ = self.forward_pane_mouse_motion(terminal_runtimes, &info, mouse);
                 }
@@ -1251,11 +1317,137 @@ impl AppState {
     pub(super) fn screen_rect(&self) -> Rect {
         let sidebar = self.view.sidebar_rect;
         let terminal = self.view.terminal_area;
-        let x = sidebar.x.min(terminal.x);
-        let y = sidebar.y.min(terminal.y);
-        let right = (sidebar.x + sidebar.width).max(terminal.x + terminal.width);
-        let bottom = (sidebar.y + sidebar.height).max(terminal.y + terminal.height);
+        let file_tree = self.view.file_tree_rect;
+        let mut x = sidebar.x.min(terminal.x);
+        let mut y = sidebar.y.min(terminal.y);
+        let mut right = (sidebar.x + sidebar.width).max(terminal.x + terminal.width);
+        let mut bottom = (sidebar.y + sidebar.height).max(terminal.y + terminal.height);
+        if file_tree.width > 0 && file_tree.height > 0 {
+            x = x.min(file_tree.x);
+            y = y.min(file_tree.y);
+            right = right.max(file_tree.x + file_tree.width);
+            bottom = bottom.max(file_tree.y + file_tree.height);
+        }
         Rect::new(x, y, right.saturating_sub(x), bottom.saturating_sub(y))
+    }
+
+    fn handle_file_tree_mouse_down(&mut self, col: u16, row: u16) -> Option<MouseAction> {
+        let layout = crate::ui::file_tree::compute_file_tree_layout(
+            self.view.file_tree_rect,
+            &self.file_tree,
+            self.file_tree_collapsed,
+        );
+        self.file_tree.focused = true;
+
+        if rect_contains(layout.toggle_rect, col, row) {
+            self.file_tree_collapsed = !self.file_tree_collapsed;
+            return None;
+        }
+
+        if layout.divider_col == Some(col) {
+            if self.file_tree_collapsed {
+                self.file_tree_collapsed = false;
+                return None;
+            }
+            self.drag = Some(DragState {
+                target: DragTarget::FileTreeDivider,
+            });
+            self.set_manual_file_tree_width(col);
+            return None;
+        }
+
+        if self.file_tree_collapsed {
+            self.file_tree_collapsed = false;
+            return None;
+        }
+
+        if layout
+            .explorer_button_rect
+            .is_some_and(|r| rect_contains(r, col, row))
+        {
+            return self
+                .file_tree
+                .current_explorer_dir()
+                .cloned()
+                .map(MouseAction::OpenInFileExplorer);
+        }
+
+        if layout
+            .up_button_rect
+            .is_some_and(|r| rect_contains(r, col, row))
+        {
+            self.file_tree.go_up();
+            return None;
+        }
+
+        if layout
+            .refresh_button_rect
+            .is_some_and(|r| rect_contains(r, col, row))
+        {
+            self.file_tree.refresh();
+            return None;
+        }
+
+        if layout
+            .sync_button_rect
+            .is_some_and(|r| rect_contains(r, col, row))
+        {
+            self.file_tree.snap_to_pane_cwd();
+            return None;
+        }
+
+        if let Some(sb_rect) = layout.scrollbar_rect {
+            if rect_contains(sb_rect, col, row) {
+                let metrics = crate::ui::file_tree::file_tree_scroll_metrics(
+                    self.file_tree.entries.len(),
+                    layout.list_rect.height as usize,
+                    self.file_tree.scroll,
+                );
+                if let Some(grab_row_offset) =
+                    crate::ui::scrollbar_thumb_grab_offset(metrics, sb_rect, row)
+                {
+                    self.drag = Some(DragState {
+                        target: DragTarget::FileTreeScrollbar { grab_row_offset },
+                    });
+                } else {
+                    let offset_from_bottom =
+                        crate::ui::scrollbar_offset_from_row(metrics, sb_rect, row);
+                    self.file_tree.scroll =
+                        metrics.max_offset_from_bottom.saturating_sub(offset_from_bottom);
+                }
+                return None;
+            }
+        }
+
+        if rect_contains(layout.list_rect, col, row) {
+            let row_offset = (row - layout.list_rect.y) as usize;
+            let entry_idx = self.file_tree.scroll + row_offset;
+            if let Some(entry) = self.file_tree.entries.get(entry_idx).cloned() {
+                let now = std::time::Instant::now();
+                let is_double = self.file_tree.last_click.as_ref().is_some_and(|(p, t)| {
+                    p == &entry.path && now.duration_since(*t) <= std::time::Duration::from_millis(450)
+                });
+                self.file_tree.last_click = Some((entry.path.clone(), now));
+                self.file_tree.selected_path = Some(entry.path.clone());
+
+                if entry.is_parent_link {
+                    self.file_tree.last_click = None;
+                    self.file_tree.go_up();
+                } else if entry.is_dir {
+                    if is_double {
+                        self.file_tree.last_click = None;
+                        self.file_tree.enter_dir(entry.path);
+                    } else {
+                        self.file_tree.toggle_expand(&entry.path);
+                    }
+                } else if is_double {
+                    self.file_tree.last_click = None;
+                    return Some(MouseAction::OpenFileTreePath(entry.path));
+                }
+            }
+        }
+
+        None
     }
 
     pub(crate) fn context_menu_rect(&self) -> Option<Rect> {
@@ -4787,5 +4979,118 @@ mod tests {
         };
 
         assert_eq!(wheel_routing(input_state), WheelRouting::HostScroll);
+    }
+
+    #[test]
+    fn file_tree_mouse_clicks_expand_enter_open_and_launch_explorer() {
+        let root = std::env::temp_dir().join(format!(
+            "herdr-file-tree-mouse-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let sub = root.join("src");
+        let file = root.join("notes.txt");
+        std::fs::create_dir_all(&sub).expect("create sub");
+        std::fs::write(&file, "hello").expect("write notes");
+
+        let mut app = app_for_mouse_test();
+        let mut ws = Workspace::test_new("ws");
+        ws.identity_cwd = root.clone();
+        let root_pane = ws.tabs[0].root_pane;
+        app.state.workspaces = vec![ws];
+        app.state.ensure_test_terminals();
+        let term_id = app.state.workspaces[0].tabs[0].panes[&root_pane]
+            .attached_terminal_id
+            .clone();
+        app.state.terminals.get_mut(&term_id).unwrap().cwd = root.clone();
+        app.state.active = Some(0);
+        app.state.selected = 0;
+        app.state.mode = Mode::Terminal;
+        app.state.file_tree_visible = true;
+
+        let area = Rect::new(0, 0, 120, 30);
+        crate::ui::compute_view(&mut app.state, area);
+        let panel = app.state.view.file_tree_rect;
+        assert_eq!(panel.width, 30);
+
+        let layout = crate::ui::file_tree::compute_file_tree_layout(
+            panel,
+            &app.state.file_tree,
+            app.state.file_tree_collapsed,
+        );
+
+        let exp = layout.explorer_button_rect.expect("explorer button");
+        let exp_action = app.state.handle_mouse(
+            &mut app.terminal_runtimes,
+            crate::app::LOCAL_INPUT_SOURCE,
+            mouse(MouseEventKind::Down(MouseButton::Left), exp.x + 1, exp.y),
+        );
+        assert!(matches!(
+            exp_action,
+            Some(MouseAction::OpenInFileExplorer(ref p)) if p == &root
+        ));
+
+        let file_idx = app
+            .state
+            .file_tree
+            .entries
+            .iter()
+            .position(|e| e.name == "notes.txt")
+            .expect("notes.txt row");
+        let file_row = layout.list_rect.y + file_idx as u16;
+        let first_click = app.state.handle_mouse(
+            &mut app.terminal_runtimes,
+            crate::app::LOCAL_INPUT_SOURCE,
+            mouse(
+                MouseEventKind::Down(MouseButton::Left),
+                layout.list_rect.x + 2,
+                file_row,
+            ),
+        );
+        assert!(first_click.is_none());
+        let second_click = app.state.handle_mouse(
+            &mut app.terminal_runtimes,
+            crate::app::LOCAL_INPUT_SOURCE,
+            mouse(
+                MouseEventKind::Down(MouseButton::Left),
+                layout.list_rect.x + 2,
+                file_row,
+            ),
+        );
+        assert!(matches!(
+            second_click,
+            Some(MouseAction::OpenFileTreePath(ref p)) if p == &file
+        ));
+
+        let sub_idx = app
+            .state
+            .file_tree
+            .entries
+            .iter()
+            .position(|e| e.name == "src")
+            .expect("src row");
+        let sub_row = layout.list_rect.y + sub_idx as u16;
+        app.state.handle_mouse(
+            &mut app.terminal_runtimes,
+            crate::app::LOCAL_INPUT_SOURCE,
+            mouse(
+                MouseEventKind::Down(MouseButton::Left),
+                layout.list_rect.x + 2,
+                sub_row,
+            ),
+        );
+        assert!(app.state.file_tree.expanded_dirs.contains(&sub));
+        app.state.handle_mouse(
+            &mut app.terminal_runtimes,
+            crate::app::LOCAL_INPUT_SOURCE,
+            mouse(
+                MouseEventKind::Down(MouseButton::Left),
+                layout.list_rect.x + 2,
+                sub_row,
+            ),
+        );
+        assert_eq!(app.state.file_tree.root_dir.as_ref(), Some(&sub));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

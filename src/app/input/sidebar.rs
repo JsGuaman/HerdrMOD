@@ -272,6 +272,27 @@ impl AppState {
         self.mark_session_dirty();
     }
 
+    pub(super) fn on_file_tree_divider(&self, col: u16, row: u16) -> bool {
+        if self.file_tree_collapsed {
+            return false;
+        }
+        let panel = self.view.file_tree_rect;
+        panel.width >= 2
+            && col == panel.x
+            && row >= panel.y
+            && row < panel.y + panel.height
+    }
+
+    pub(super) fn set_manual_file_tree_width(&mut self, divider_col: u16) {
+        let panel = self.view.file_tree_rect;
+        if panel.width == 0 {
+            return;
+        }
+        let right_edge = panel.x + panel.width;
+        let width = right_edge.saturating_sub(divider_col);
+        self.file_tree_width = width.clamp(self.file_tree_min_width, self.file_tree_max_width);
+    }
+
     pub(super) fn on_sidebar_section_divider(&self, col: u16, row: u16) -> bool {
         if self.sidebar_collapsed {
             return false;

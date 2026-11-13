@@ -533,6 +533,20 @@ pub fn open_url(url: &str) -> std::io::Result<Option<std::process::Child>> {
         .map(Some)
 }
 
+pub fn open_path(path: &std::path::Path) -> std::io::Result<Option<std::process::Child>> {
+    Command::new("open")
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(Some)
+}
+
+pub fn open_in_file_explorer(dir: &std::path::Path) -> std::io::Result<Option<std::process::Child>> {
+    open_path(dir)
+}
+
 pub fn read_clipboard_image() -> Option<ClipboardImage> {
     let path = std::env::temp_dir().join(format!(
         "herdr-clipboard-image-{}-{}.png",

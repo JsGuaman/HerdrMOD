@@ -876,6 +876,7 @@ pub enum ViewLayout {
 pub struct ViewState {
     pub layout: ViewLayout,
     pub sidebar_rect: Rect,
+    pub file_tree_rect: Rect,
     pub workspace_card_areas: Vec<WorkspaceCardArea>,
     pub hibernated_card_areas: Vec<HibernatedCardArea>,
     pub tab_bar_rect: Rect,
@@ -1241,6 +1242,10 @@ pub(crate) enum DragTarget {
     },
     SidebarDivider,
     SidebarSectionDivider,
+    FileTreeDivider,
+    FileTreeScrollbar {
+        grab_row_offset: u16,
+    },
 }
 
 /// Active mouse drag on a split border or sidebar divider.
@@ -1541,6 +1546,13 @@ pub struct AppState {
     pub sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig,
     /// Ratio of sidebar height allocated to the workspaces section.
     pub sidebar_section_split: f32,
+    pub default_file_tree_width: u16,
+    pub file_tree_width: u16,
+    pub file_tree_min_width: u16,
+    pub file_tree_max_width: u16,
+    pub file_tree_collapsed: bool,
+    pub file_tree_visible: bool,
+    pub file_tree: crate::app::file_tree::FileTreeState,
     pub agent_panel_sort: AgentPanelSort,
     pub status_indicators: crate::config::StatusIndicatorStyle,
     /// Transient session-wide projection override for the built-in Agents view.
@@ -1894,6 +1906,7 @@ impl AppState {
             view: ViewState {
                 layout: ViewLayout::Desktop,
                 sidebar_rect: Rect::default(),
+                file_tree_rect: Rect::default(),
                 workspace_card_areas: Vec::new(),
                 hibernated_card_areas: Vec::new(),
                 tab_bar_rect: Rect::default(),
@@ -1939,6 +1952,13 @@ impl AppState {
             sidebar_collapsed: false,
             sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig::Compact,
             sidebar_section_split: 0.5,
+            default_file_tree_width: 30,
+            file_tree_width: 30,
+            file_tree_min_width: 20,
+            file_tree_max_width: 56,
+            file_tree_collapsed: false,
+            file_tree_visible: false,
+            file_tree: crate::app::file_tree::FileTreeState::default(),
             agent_panel_sort: AgentPanelSort::Spaces,
             status_indicators: crate::config::StatusIndicatorStyle::Dots,
             agent_view_override: None,
