@@ -207,6 +207,18 @@ impl App {
                 }
                 true
             }
+            KeyCode::Char('s') => {
+                let ws_idx = self.state.active.unwrap_or(self.state.selected);
+                let dir = self.state.file_tree.current_explorer_dir().cloned();
+                self.save_workspace_herdr_link(ws_idx, dir);
+                true
+            }
+            KeyCode::Char('L') => {
+                let ws_idx = self.state.active.unwrap_or(self.state.selected);
+                let dir = self.state.file_tree.current_explorer_dir().cloned();
+                self.link_workspace_herdr_link(ws_idx, dir);
+                true
+            }
             _ => false,
         }
     }
@@ -580,6 +592,16 @@ impl App {
                     }
                     MouseAction::OpenFileTreePath(path) => self.open_file_tree_path(&path),
                     MouseAction::OpenInFileExplorer(dir) => self.open_in_file_explorer(&dir),
+                    MouseAction::SaveHerdrLink => {
+                        let ws_idx = self.state.active.unwrap_or(self.state.selected);
+                        let dir = self.state.file_tree.current_explorer_dir().cloned();
+                        self.save_workspace_herdr_link(ws_idx, dir);
+                    }
+                    MouseAction::LinkHerdrLink => {
+                        let ws_idx = self.state.active.unwrap_or(self.state.selected);
+                        let dir = self.state.file_tree.current_explorer_dir().cloned();
+                        self.link_workspace_herdr_link(ws_idx, dir);
+                    }
                 }
             }
             if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))

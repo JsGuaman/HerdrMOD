@@ -967,6 +967,14 @@ impl HeadlessServer {
             needs_render = true;
             crate::render_prof::event("full_render_cause.deferred_hibernate_workspace");
         }
+        if let Some(ws_idx) = self.app.state.request_save_herdr_link.take() {
+            self.app.save_workspace_herdr_link(ws_idx, None);
+            needs_render = true;
+        }
+        if let Some(ws_idx) = self.app.state.request_link_herdr_link.take() {
+            self.app.link_workspace_herdr_link(ws_idx, None);
+            needs_render = true;
+        }
 
         if let Some(hib_idx) = self.app.state.request_restore_hibernated_workspace.take() {
             self.app.restore_hibernated_workspace(hib_idx);

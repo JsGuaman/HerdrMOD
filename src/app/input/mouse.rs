@@ -63,6 +63,8 @@ pub(super) enum MouseAction {
     },
     OpenFileTreePath(std::path::PathBuf),
     OpenInFileExplorer(std::path::PathBuf),
+    SaveHerdrLink,
+    LinkHerdrLink,
 }
 
 enum MobileMouseResult {
@@ -1361,6 +1363,18 @@ impl AppState {
             return None;
         }
 
+        if layout
+            .save_link_button_rect
+            .is_some_and(|r| rect_contains(r, col, row))
+        {
+            return Some(MouseAction::SaveHerdrLink);
+        }
+        if layout
+            .load_link_button_rect
+            .is_some_and(|r| rect_contains(r, col, row))
+        {
+            return Some(MouseAction::LinkHerdrLink);
+        }
         if layout
             .explorer_button_rect
             .is_some_and(|r| rect_contains(r, col, row))
@@ -5090,6 +5104,66 @@ mod tests {
             ),
         );
         assert_eq!(app.state.file_tree.root_dir.as_ref(), Some(&sub));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn file_tree_save_and_link_button_clicks_emit_herdr_link_actions() {
+        let root = std::env::temp_dir().join(format!(
+            "herdr-link-mouse-btn-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create root");
+
+        let mut app = app_for_mouse_test();
+        let mut ws = Workspace::test_new("ws");
+        ws.identity_cwd = root.clone();
+        let root_pane = ws.tabs[0].root_pane;
+        app.state.workspaces = vec![ws];
+        app.state.ensure_test_terminals();
+        let term_id = app.state.workspaces[0].tabs[0].panes[&root_pane]
+            .attached_terminal_id
+            .clone();
+        app.state.terminals.get_mut(&term_id).unwrap().cwd = root.clone();
+        app.state.active = Some(0);
+        app.state.selected = 0;
+        app.state.mode = Mode::Terminal;
+        app.state.file_tree_visible = true;
+
+        let area = Rect::new(0, 0, 160, 30);
+        crate::ui::compute_view(&mut app.state, area);
+        let panel = app.state.view.file_tree_rect;
+        let layout = crate::ui::file_tree::compute_file_tree_layout(
+            panel,
+            &app.state.file_tree,
+            app.state.file_tree_collapsed,
+        );
+
+        let save_rect = layout.save_link_button_rect.expect("save button rect");
+        let save_action = app.state.handle_mouse(
+            &mut app.terminal_runtimes,
+            crate::app::LOCAL_INPUT_SOURCE,
+            mouse(
+                MouseEventKind::Down(MouseButton::Left),
+                save_rect.x + 1,
+                save_rect.y,
+            ),
+        );
+        assert!(matches!(save_action, Some(MouseAction::SaveHerdrLink)));
+
+        let link_rect = layout.load_link_button_rect.expect("link button rect");
+        let link_action = app.state.handle_mouse(
+            &mut app.terminal_runtimes,
+            crate::app::LOCAL_INPUT_SOURCE,
+            mouse(
+                MouseEventKind::Down(MouseButton::Left),
+                link_rect.x + 1,
+                link_rect.y,
+            ),
+        );
+        assert!(matches!(link_action, Some(MouseAction::LinkHerdrLink)));
 
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -15,6 +15,8 @@ pub(crate) const COLLAPSED_FILE_TREE_WIDTH: u16 = 3;
 pub(crate) struct FileTreeLayout {
     pub divider_col: Option<u16>,
     pub toggle_rect: Rect,
+    pub save_link_button_rect: Option<Rect>,
+    pub load_link_button_rect: Option<Rect>,
     pub explorer_button_rect: Option<Rect>,
     pub up_button_rect: Option<Rect>,
     pub refresh_button_rect: Option<Rect>,
@@ -74,13 +76,22 @@ pub(crate) fn compute_file_tree_layout(
         Rect::default()
     };
 
+    let mut header_right = inner.x + inner.width;
     let explorer_label_w = 10u16; // "[Explorer]"
-    let explorer_button_rect = (inner.width >= explorer_label_w + 6).then_some(Rect::new(
-        inner.x + inner.width - explorer_label_w,
-        inner.y,
-        explorer_label_w,
-        1,
-    ));
+    let explorer_button_rect = (inner.width >= explorer_label_w + 6).then(|| {
+        header_right -= explorer_label_w;
+        Rect::new(header_right, inner.y, explorer_label_w, 1)
+    });
+    let link_w = 6u16; // "[Link]"
+    let load_link_button_rect = (header_right >= inner.x + link_w + 6).then(|| {
+        header_right -= link_w;
+        Rect::new(header_right, inner.y, link_w, 1)
+    });
+    let save_w = 6u16; // "[Save]"
+    let save_link_button_rect = (header_right >= inner.x + save_w + 6).then(|| {
+        header_right -= save_w;
+        Rect::new(header_right, inner.y, save_w, 1)
+    });
 
     let (up_button_rect, refresh_button_rect, sync_button_rect) = if inner.height >= 2 {
         let mut right_edge = inner.x + inner.width;
@@ -141,6 +152,8 @@ pub(crate) fn compute_file_tree_layout(
     FileTreeLayout {
         divider_col,
         toggle_rect,
+        save_link_button_rect,
+        load_link_button_rect,
         explorer_button_rect,
         up_button_rect,
         refresh_button_rect,
@@ -201,10 +214,16 @@ pub(crate) fn render_file_tree(app: &AppState, frame: &mut Frame, area: Rect) {
         p.subtext0
     };
     let header_title = " FILES";
-    let header_max = layout
-        .explorer_button_rect
-        .map(|r| r.x.saturating_sub(inner.x))
-        .unwrap_or(inner.width);
+    let header_max = [
+        layout.save_link_button_rect,
+        layout.load_link_button_rect,
+        layout.explorer_button_rect,
+    ]
+    .into_iter()
+    .flatten()
+    .map(|r| r.x.saturating_sub(inner.x))
+    .min()
+    .unwrap_or(inner.width);
     buf.set_stringn(
         inner.x,
         inner.y,
@@ -215,6 +234,39 @@ pub(crate) fn render_file_tree(app: &AppState, frame: &mut Frame, area: Rect) {
             .bg(p.sidebar_bg)
             .add_modifier(Modifier::BOLD),
     );
+
+    if let Some(save_rect) = layout.save_link_button_rect {
+        buf.set_stringn(
+            save_rect.x,
+            save_rect.y,
+            "[Save]",
+            save_rect.width as usize,
+            Style::default().fg(p.subtext0).bg(p.sidebar_bg),
+        );
+    }
+
+    if let Some(link_rect) = layout.load_link_button_rect {
+        let has_link = app
+            .file_tree
+            .root_dir
+            .as_deref()
+            .is_some_and(crate::app::herdr_link::has_herdr_link);
+        let link_style = if has_link {
+            Style::default()
+                .fg(p.accent)
+                .bg(p.sidebar_bg)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(p.overlay0).bg(p.sidebar_bg)
+        };
+        buf.set_stringn(
+            link_rect.x,
+            link_rect.y,
+            "[Link]",
+            link_rect.width as usize,
+            link_style,
+        );
+    }
 
     if let Some(exp_rect) = layout.explorer_button_rect {
         buf.set_stringn(

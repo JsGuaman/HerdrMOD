@@ -1305,16 +1305,33 @@ pub struct ContextMenuState {
 impl ContextMenuState {
     pub fn items(&self) -> Vec<&'static str> {
         match self.kind {
-            ContextMenuKind::Workspace { .. } => vec!["Rename", "Hibernate", "Close"],
+            ContextMenuKind::Workspace { .. } => {
+                vec!["Rename", "Hibernate", "Close", "Save herdrLink", "Link herdrLink"]
+            }
             ContextMenuKind::GitWorkspace {
                 is_linked_worktree: false,
                 has_worktree_children: false,
                 ..
-            } => vec!["Rename", "Hibernate", "Close", "New worktree", "Open worktree..."],
+            } => vec![
+                "Rename",
+                "Hibernate",
+                "Close",
+                "New worktree",
+                "Open worktree...",
+                "Save herdrLink",
+                "Link herdrLink",
+            ],
             ContextMenuKind::GitWorkspace {
                 is_linked_worktree: true,
                 ..
-            } => vec!["Rename", "Hibernate", "Close", "Delete worktree checkout..."],
+            } => vec![
+                "Rename",
+                "Hibernate",
+                "Close",
+                "Delete worktree checkout...",
+                "Save herdrLink",
+                "Link herdrLink",
+            ],
             ContextMenuKind::GitWorkspace {
                 is_linked_worktree: false,
                 has_worktree_children: true,
@@ -1327,6 +1344,8 @@ impl ContextMenuState {
                 "New worktree",
                 "Open worktree...",
                 if collapsed { "Expand" } else { "Collapse" },
+                "Save herdrLink",
+                "Link herdrLink",
             ],
             ContextMenuKind::HibernatedWorkspace { .. } => vec!["Restore", "Delete"],
             ContextMenuKind::Tab { .. } => vec!["New tab", "Rename", "Close"],
@@ -1473,6 +1492,8 @@ pub struct AppState {
     pub request_new_tab: bool,
     pub request_hibernate_workspace: Option<usize>,
     pub request_restore_hibernated_workspace: Option<usize>,
+    pub request_save_herdr_link: Option<usize>,
+    pub request_link_herdr_link: Option<usize>,
     pub request_new_linked_worktree: Option<usize>,
     pub request_open_existing_worktree: Option<usize>,
     pub request_new_workspace_cwd: Option<std::path::PathBuf>,
@@ -1871,6 +1892,8 @@ impl AppState {
             request_new_tab: false,
             request_hibernate_workspace: None,
             request_restore_hibernated_workspace: None,
+            request_save_herdr_link: None,
+            request_link_herdr_link: None,
             request_new_linked_worktree: None,
             request_open_existing_worktree: None,
             request_new_workspace_cwd: None,
@@ -2680,7 +2703,14 @@ mod tests {
 
         assert_eq!(
             menu.items(),
-            &["Rename", "Hibernate", "Close", "Delete worktree checkout..."]
+            &[
+                "Rename",
+                "Hibernate",
+                "Close",
+                "Delete worktree checkout...",
+                "Save herdrLink",
+                "Link herdrLink"
+            ]
         );
     }
 
@@ -2700,7 +2730,15 @@ mod tests {
 
         assert_eq!(
             menu.items(),
-            &["Rename", "Hibernate", "Close", "New worktree", "Open worktree..."]
+            &[
+                "Rename",
+                "Hibernate",
+                "Close",
+                "New worktree",
+                "Open worktree...",
+                "Save herdrLink",
+                "Link herdrLink"
+            ]
         );
     }
 
@@ -2726,7 +2764,9 @@ mod tests {
                 "Close group",
                 "New worktree",
                 "Open worktree...",
-                "Collapse"
+                "Collapse",
+                "Save herdrLink",
+                "Link herdrLink"
             ]
         );
     }

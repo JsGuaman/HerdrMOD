@@ -16,6 +16,7 @@ mod config_io;
 mod creation;
 pub(crate) mod file_tree;
 mod git_refresh;
+pub(crate) mod herdr_link;
 mod ids;
 mod input;
 pub(crate) mod pane_graphics;
@@ -566,6 +567,8 @@ impl App {
             hibernated_workspaces,
             request_hibernate_workspace: None,
             request_restore_hibernated_workspace: None,
+            request_save_herdr_link: None,
+            request_link_herdr_link: None,
             active,
             previous_pane_focus: None,
             selected,
@@ -1043,6 +1046,14 @@ impl App {
 
             if let Some(ws_idx) = self.state.request_hibernate_workspace.take() {
                 self.hibernate_workspace_idx(ws_idx);
+                needs_render = true;
+            }
+            if let Some(ws_idx) = self.state.request_save_herdr_link.take() {
+                self.save_workspace_herdr_link(ws_idx, None);
+                needs_render = true;
+            }
+            if let Some(ws_idx) = self.state.request_link_herdr_link.take() {
+                self.link_workspace_herdr_link(ws_idx, None);
                 needs_render = true;
             }
 
@@ -2045,6 +2056,155 @@ impl App {
             self.state.selected = new_idx;
             self.state.mark_session_dirty();
         }
+    }
+
+    fn set_herdr_link_toast(
+        &mut self,
+        kind: crate::app::state::ToastKind,
+        title: impl Into<String>,
+        context: impl Into<String>,
+    ) {
+        let previous_toast = self.state.toast.clone();
+        self.state.toast = Some(crate::app::state::ToastNotification {
+            kind,
+            title: title.into(),
+            context: context.into(),
+            position: None,
+            target: None,
+        });
+        self.sync_toast_deadline(previous_toast);
+    }
+
+    pub(crate) fn save_workspace_herdr_link(
+        &mut self,
+        ws_idx: usize,
+        override_cwd: Option<std::path::PathBuf>,
+    ) {
+        let Some(ws) = self.state.workspaces.get(ws_idx) else {
+            self.set_herdr_link_toast(
+                crate::app::state::ToastKind::NeedsAttention,
+                "herdrLink save failed",
+                "No workspace selected",
+            );
+            return;
+        };
+        let Some(workspace_cwd) = override_cwd.or_else(|| {
+            ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes)
+        }) else {
+            self.set_herdr_link_toast(
+                crate::app::state::ToastKind::NeedsAttention,
+                "herdrLink save failed",
+                "Workspace directory not resolved",
+            );
+            return;
+        };
+        let snap =
+            crate::persist::capture_workspace(ws, &self.state.terminals, &self.terminal_runtimes);
+        match herdr_link::save_herdr_link(&workspace_cwd, snap, None) {
+            Ok(summary) => {
+                self.state.file_tree.refresh();
+                self.set_herdr_link_toast(
+                    crate::app::state::ToastKind::Finished,
+                    "herdrLink saved",
+                    format!(
+                        "{} chat(s), {} db(s) -> herdrLink/",
+                        summary.conversation_count, summary.compressed_db_count
+                    ),
+                );
+            }
+            Err(err) => {
+                self.set_herdr_link_toast(
+                    crate::app::state::ToastKind::NeedsAttention,
+                    "herdrLink save failed",
+                    err,
+                );
+            }
+        }
+    }
+
+    pub(crate) fn link_workspace_herdr_link(
+        &mut self,
+        ws_idx: usize,
+        override_cwd: Option<std::path::PathBuf>,
+    ) {
+        let ws_cwd = self.state.workspaces.get(ws_idx).and_then(|ws| {
+            ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes)
+        });
+        let Some(workspace_cwd) = override_cwd
+            .as_ref()
+            .filter(|dir| herdr_link::has_herdr_link(dir))
+            .cloned()
+            .or(ws_cwd)
+            .or(override_cwd)
+        else {
+            self.set_herdr_link_toast(
+                crate::app::state::ToastKind::NeedsAttention,
+                "herdrLink link failed",
+                "Workspace directory not resolved",
+            );
+            return;
+        };
+
+        let (snap, summary) = match herdr_link::load_and_link_herdr_link(&workspace_cwd, None) {
+            Ok(res) => res,
+            Err(err) => {
+                self.set_herdr_link_toast(
+                    crate::app::state::ToastKind::NeedsAttention,
+                    "herdrLink link failed",
+                    err,
+                );
+                return;
+            }
+        };
+
+        let restored = crate::persist::restore_single_workspace(
+            &snap,
+            self.state.headless_size.1,
+            self.state.headless_size.0,
+            self.state.pane_scrollback_limit_bytes,
+            &self.state.default_shell,
+            self.state.shell_mode,
+            true,
+            self.event_tx.clone(),
+            self.render_notify.clone(),
+            self.render_dirty.clone(),
+        );
+
+        let Some((workspace, restored_terminals, restored_runtimes)) = restored else {
+            self.set_herdr_link_toast(
+                crate::app::state::ToastKind::NeedsAttention,
+                "herdrLink link failed",
+                "Could not restore workspace panes",
+            );
+            return;
+        };
+
+        let target_idx = if ws_idx < self.state.workspaces.len() {
+            self.close_workspace_idx_via_api(ws_idx);
+            ws_idx.min(self.state.workspaces.len())
+        } else {
+            self.state.workspaces.len()
+        };
+
+        for terminal in restored_terminals {
+            self.state.terminals.insert(terminal.id.clone(), terminal);
+        }
+        for (id, runtime) in restored_runtimes {
+            self.terminal_runtimes.insert(id, runtime);
+        }
+        self.state.workspaces.insert(target_idx, workspace);
+        self.state.active = Some(target_idx);
+        self.state.selected = target_idx;
+        self.state.file_tree.sync_pane_cwd(Some(workspace_cwd));
+        self.state.mark_session_dirty();
+        self.set_herdr_link_toast(
+            crate::app::state::ToastKind::Finished,
+            "herdrLink linked",
+            format!(
+                "{} chat(s) & panes restored",
+                summary.conversation_count
+            ),
+        );
     }
 
     fn handle_mouse_event_headless(

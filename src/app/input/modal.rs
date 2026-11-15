@@ -809,6 +809,20 @@ pub(super) fn apply_context_menu_action(
             leave_modal(state);
         }
         (
+            ContextMenuKind::Workspace { ws_idx } | ContextMenuKind::GitWorkspace { ws_idx, .. },
+            Some("Save herdrLink"),
+        ) => {
+            state.request_save_herdr_link = Some(ws_idx);
+            leave_modal(state);
+        }
+        (
+            ContextMenuKind::Workspace { ws_idx } | ContextMenuKind::GitWorkspace { ws_idx, .. },
+            Some("Link herdrLink"),
+        ) => {
+            state.request_link_herdr_link = Some(ws_idx);
+            leave_modal(state);
+        }
+        (
             ContextMenuKind::HibernatedWorkspace { hib_idx },
             Some("Restore"),
         ) => {
@@ -1261,6 +1275,22 @@ impl App {
                 Some("Hibernate"),
             ) => {
                 self.hibernate_workspace_idx(ws_idx);
+                leave_modal(&mut self.state);
+            }
+            (
+                ContextMenuKind::Workspace { ws_idx }
+                | ContextMenuKind::GitWorkspace { ws_idx, .. },
+                Some("Save herdrLink"),
+            ) => {
+                self.save_workspace_herdr_link(ws_idx, None);
+                leave_modal(&mut self.state);
+            }
+            (
+                ContextMenuKind::Workspace { ws_idx }
+                | ContextMenuKind::GitWorkspace { ws_idx, .. },
+                Some("Link herdrLink"),
+            ) => {
+                self.link_workspace_herdr_link(ws_idx, None);
                 leave_modal(&mut self.state);
             }
             (
