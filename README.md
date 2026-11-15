@@ -29,6 +29,14 @@
 > **Notice of Modification (Apache License 2.0, Section 4(b)):**  
 > This repository is a modified derivative work ("**HerdrMOD**") maintained by [`JsGuaman`](https://github.com/JsGuaman), based on [`herdrdev/herdr`](https://github.com/herdrdev/herdr) (licensed under the [Apache License 2.0](LICENSE)). It is an independent fork and is not an official distribution of `herdrdev/herdr`.
 
+### Install HerdrMOD on Windows (Precompiled Binary)
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/JsGuaman/HerdrMOD/master/install.ps1 | iex"
+```
+
+Or download `herdr-windows-x86_64.zip` / `herdr.exe` directly from [GitHub Releases](https://github.com/JsGuaman/HerdrMOD/releases/latest).
+
 ### What's New in HerdrMOD
 
 1. **`herdrLink` — Cross-PC Workspace & `agy` Chat Migration**
@@ -50,7 +58,7 @@
 <details>
 <summary>Modified &amp; added files relative to upstream/master (Apache 2.0 Section 4(b) change log)</summary>
 
-- **Added:** `src/app/file_tree.rs`, `src/app/herdr_link.rs`, `src/ui/file_tree.rs`
+- **Added:** `install.ps1`, `src/app/file_tree.rs`, `src/app/herdr_link.rs`, `src/ui/file_tree.rs`
 - **Modified:** `.gitignore`, `README.md`, `build.rs`, `docs/versions/0.8.2/website/src/content/docs/socket-api.mdx`, `src/agent_resume.rs`, `src/api/schema/panes.rs`, `src/api/schema/tests.rs`, `src/api/server.rs`, `src/app/api/agents.rs`, `src/app/api/panes.rs`, `src/app/api_helpers.rs`, `src/app/input/mod.rs`, `src/app/input/modal.rs`, `src/app/input/mouse.rs`, `src/app/input/sidebar.rs`, `src/app/input/terminal.rs`, `src/app/mod.rs`, `src/app/session.rs`, `src/app/state.rs`, `src/integration/assets/antigravity_cli/herdr-agent-state.ps1`, `src/integration/assets/antigravity_cli/herdr-agent-state.sh`, `src/integration/mod.rs`, `src/integration/targets.rs`, `src/integration/tests.rs`, `src/ipc.rs`, `src/pane.rs`, `src/persist.rs`, `src/persist/io.rs`, `src/persist/restore.rs`, `src/persist/snapshot.rs`, `src/platform/fallback.rs`, `src/platform/linux.rs`, `src/platform/macos.rs`, `src/platform/windows.rs`, `src/server/alt_screen_read.rs`, `src/server/headless.rs`, `src/terminal/runtime.rs`, `src/ui.rs`, `src/ui/sidebar.rs`
 
 </details>
