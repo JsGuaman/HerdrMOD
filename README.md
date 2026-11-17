@@ -39,27 +39,29 @@ Or download `herdr-windows-x86_64.zip` / `herdr.exe` directly from [GitHub Relea
 
 ### What's New in HerdrMOD
 
-1. **`herdrLink` — Cross-PC Workspace & `agy` Chat Migration**
+1. **Unified `spaces` Sidebar Slider / Scrollbar**
+   - Fixes the `spaces` vertical slider/scrollbar so it accounts for both active and hibernated workspaces together, renders a high-contrast draggable thumb (`▐`), and scrolls through every workspace (active and hibernated) via mouse drag, track click, or mouse wheel even when many workspaces overflow.
+2. **`herdrLink` — Cross-PC Workspace & `agy` Chat Migration (`a30d5a7e`)**
    - Migrates a Herdr workspace (tabs, split pane layout, working directories) together with its associated Antigravity CLI (`agy`) chats from one computer to another through your Git repository's `<project>/herdrLink/` directory.
    - **Save snapshot (`[Save]`, shortcut `s`, or right-click workspace -> `Save herdrLink`):** captures the workspace layout and safely snapshots matching `agy` conversations (`conversation_summaries.db`, per-conversation `.db` compressed as `.db.gz`, `brain/<id>/`, `annotations/<id>.pbtxt`, and matching `history.jsonl` entries) into `<project>/herdrLink/`.
    - **Link & auto-relocate on another PC (`[Link]`, shortcut `L`, or right-click workspace -> `Link herdrLink`):** decompresses `.db.gz` databases, automatically rewrites workspace paths/URIs (including nested Protobuf wire-format strings with varint length updates inside `raw_summary`, `trajectory_metadata_blob`, and `jetbox_summaries_proto.pb`), restores the workspace panes, and auto-resumes `agy --conversation <id>`. `[Link]` highlights in the right panel whenever `<dir>/herdrLink/` is detected.
-2. **Right-Hand Directory Tree Panel (`23a0de78`)**
+3. **Right-Hand Directory Tree Panel (`23a0de78`)**
    - Displays a live file & folder tree synced to the active terminal pane's current working directory.
    - **Folder navigation:** single-click expands/collapses tree nodes (`▸`/`▾`), double-click enters subfolders, plus `..`, `[↑]` parent, `[↻]` refresh, `[◎]` snap back to active pane CWD, draggable width divider, scrollbar, collapse/expand (`»`/`«`), and keyboard controls (`↑`/`↓`/`←`/`→`/`Enter`/`Backspace`/`r`/`e`/`s`/`L`/`Esc`).
    - **Default app launch:** double-clicking any file opens it with the host OS default application (`ShellExecuteW` on Windows).
    - **File Explorer shortcut:** clicking `[Explorer]` opens Windows File Explorer directly in the currently viewed directory.
-3. **Workspace Hibernation for Lower RAM Usage (`6a92dd7b`)**
+4. **Workspace Hibernation for Lower RAM Usage (`6a92dd7b`)**
    - Adds workspace hibernation/restoration across state, persistence snapshots, IPC/socket API, headless server, context menus, and sidebar UI so inactive workspaces release live PTY/terminal memory and can be restored on demand.
-4. **Auto-Resume `agy` Sessions on Restore & Unhibernate (`eb40ebed`)**
+5. **Auto-Resume `agy` Sessions on Restore & Unhibernate (`eb40ebed`)**
    - Persists and restores `agy` (`antigravity_cli`) conversation/session state when restoring persisted sessions or waking hibernated workspaces, improving integration hooks and snapshot recovery.
-5. **Windows Antigravity Hook Execution Fix (`3ac4379c`)**
+6. **Windows Antigravity Hook Execution Fix (`3ac4379c`)**
    - Fixes PowerShell hook invocation (`herdr-agent-state.ps1`) and target registration for Antigravity on Windows.
 
 <details>
 <summary>Modified &amp; added files relative to upstream/master (Apache 2.0 Section 4(b) change log)</summary>
 
 - **Added:** `install.ps1`, `src/app/file_tree.rs`, `src/app/herdr_link.rs`, `src/ui/file_tree.rs`
-- **Modified:** `.gitignore`, `README.md`, `build.rs`, `docs/versions/0.8.2/website/src/content/docs/socket-api.mdx`, `src/agent_resume.rs`, `src/api/schema/panes.rs`, `src/api/schema/tests.rs`, `src/api/server.rs`, `src/app/api/agents.rs`, `src/app/api/panes.rs`, `src/app/api_helpers.rs`, `src/app/input/mod.rs`, `src/app/input/modal.rs`, `src/app/input/mouse.rs`, `src/app/input/sidebar.rs`, `src/app/input/terminal.rs`, `src/app/mod.rs`, `src/app/session.rs`, `src/app/state.rs`, `src/integration/assets/antigravity_cli/herdr-agent-state.ps1`, `src/integration/assets/antigravity_cli/herdr-agent-state.sh`, `src/integration/mod.rs`, `src/integration/targets.rs`, `src/integration/tests.rs`, `src/ipc.rs`, `src/pane.rs`, `src/persist.rs`, `src/persist/io.rs`, `src/persist/restore.rs`, `src/persist/snapshot.rs`, `src/platform/fallback.rs`, `src/platform/linux.rs`, `src/platform/macos.rs`, `src/platform/windows.rs`, `src/server/alt_screen_read.rs`, `src/server/headless.rs`, `src/terminal/runtime.rs`, `src/ui.rs`, `src/ui/sidebar.rs`
+- **Modified:** `.gitignore`, `README.md`, `build.rs`, `docs/versions/0.8.2/website/src/content/docs/socket-api.mdx`, `src/agent_resume.rs`, `src/api/schema/panes.rs`, `src/api/schema/tests.rs`, `src/api/server.rs`, `src/app/actions.rs`, `src/app/api/agents.rs`, `src/app/api/panes.rs`, `src/app/api_helpers.rs`, `src/app/input/mod.rs`, `src/app/input/modal.rs`, `src/app/input/mouse.rs`, `src/app/input/sidebar.rs`, `src/app/input/terminal.rs`, `src/app/mod.rs`, `src/app/session.rs`, `src/app/state.rs`, `src/integration/assets/antigravity_cli/herdr-agent-state.ps1`, `src/integration/assets/antigravity_cli/herdr-agent-state.sh`, `src/integration/mod.rs`, `src/integration/targets.rs`, `src/integration/tests.rs`, `src/ipc.rs`, `src/pane.rs`, `src/persist.rs`, `src/persist/io.rs`, `src/persist/restore.rs`, `src/persist/snapshot.rs`, `src/platform/fallback.rs`, `src/platform/linux.rs`, `src/platform/macos.rs`, `src/platform/windows.rs`, `src/server/alt_screen_read.rs`, `src/server/headless.rs`, `src/terminal/runtime.rs`, `src/ui.rs`, `src/ui/sidebar.rs`
 
 </details>
 

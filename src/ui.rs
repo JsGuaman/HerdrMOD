@@ -279,7 +279,9 @@ fn compute_view_internal(
     } else {
         app.workspace_scroll = app
             .workspace_scroll
-            .min(app.workspaces.len().saturating_sub(1));
+            .min(
+                (app.workspaces.len() + app.hibernated_workspaces.len()).saturating_sub(1),
+            );
         app.agent_panel_scroll = 0;
     }
 

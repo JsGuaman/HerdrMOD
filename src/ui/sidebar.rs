@@ -310,6 +310,65 @@ pub(crate) fn next_entry_is_indented_workspace(entries: &[WorkspaceListEntry], i
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpaceScrollItem {
+    Active {
+        entry_idx: usize,
+        ws_idx: usize,
+        indented: bool,
+    },
+    Hibernated {
+        hib_idx: usize,
+    },
+}
+
+fn space_scroll_items(app: &AppState) -> (Vec<WorkspaceListEntry>, Vec<SpaceScrollItem>) {
+    let entries = workspace_list_entries(app);
+    let mut items = Vec::with_capacity(entries.len() + app.hibernated_workspaces.len());
+    for (entry_idx, entry) in entries.iter().enumerate() {
+        let WorkspaceListEntry::Workspace { ws_idx, indented } = *entry;
+        items.push(SpaceScrollItem::Active {
+            entry_idx,
+            ws_idx,
+            indented,
+        });
+    }
+    for hib_idx in 0..app.hibernated_workspaces.len() {
+        items.push(SpaceScrollItem::Hibernated { hib_idx });
+    }
+    (entries, items)
+}
+
+fn space_scroll_item_height_and_gap(
+    app: &AppState,
+    entries: &[WorkspaceListEntry],
+    item: SpaceScrollItem,
+    body_height: u16,
+) -> Option<(u16, u16)> {
+    match item {
+        SpaceScrollItem::Active {
+            entry_idx,
+            ws_idx,
+            indented,
+        } => {
+            let ws = app.workspaces.get(ws_idx)?;
+            let row_height = workspace_row_height_in_body(app, ws, indented, body_height);
+            let gap = if entry_idx + 1 < entries.len() {
+                workspace_entry_gap(app, entries, entry_idx)
+            } else if !app.hibernated_workspaces.is_empty() {
+                1
+            } else {
+                0
+            };
+            Some((row_height, gap))
+        }
+        SpaceScrollItem::Hibernated { hib_idx } => {
+            let _ = app.hibernated_workspaces.get(hib_idx)?;
+            Some((1.min(body_height), 0))
+        }
+    }
+}
+
 pub(crate) fn normalized_workspace_scroll(app: &AppState, area: Rect, requested: usize) -> usize {
     let ws_area = workspace_list_rect(area, app.sidebar_section_split);
     let body = workspace_list_body_rect(ws_area, false);
@@ -317,7 +376,8 @@ pub(crate) fn normalized_workspace_scroll(app: &AppState, area: Rect, requested:
         return requested;
     }
 
-    if workspace_list_entries(app).is_empty() {
+    let (_, items) = space_scroll_items(app);
+    if items.is_empty() {
         0
     } else {
         requested.min(workspace_list_bottom_start(app, ws_area))
@@ -460,18 +520,12 @@ fn workspace_list_visible_count(app: &AppState, area: Rect, scroll: usize) -> us
 
     let mut used_rows = 0u16;
     let mut visible = 0usize;
-    let entries = workspace_list_entries(app);
-    for (entry_idx, entry) in entries.iter().enumerate().skip(scroll) {
-        let (row_height, gap) = match entry {
-            WorkspaceListEntry::Workspace { ws_idx, indented } => {
-                let Some(ws) = app.workspaces.get(*ws_idx) else {
-                    continue;
-                };
-                (
-                    workspace_row_height_in_body(app, ws, *indented, body.height),
-                    workspace_entry_gap(app, &entries, entry_idx),
-                )
-            }
+    let (entries, items) = space_scroll_items(app);
+    for item in items.iter().copied().skip(scroll) {
+        let Some((row_height, gap)) =
+            space_scroll_item_height_and_gap(app, &entries, item, body.height)
+        else {
+            continue;
         };
         if used_rows.saturating_add(row_height) > body.height {
             break;
@@ -485,24 +539,23 @@ fn workspace_list_visible_count(app: &AppState, area: Rect, scroll: usize) -> us
 
 fn workspace_list_bottom_start(app: &AppState, area: Rect) -> usize {
     let body = workspace_list_body_rect(area, false);
-    let entries = workspace_list_entries(app);
+    let (entries, items) = space_scroll_items(app);
     let mut used_rows = 0u16;
-    let mut start = entries.len();
-    for (entry_idx, entry) in entries.iter().enumerate().rev() {
-        let WorkspaceListEntry::Workspace { ws_idx, indented } = entry;
-        let Some(workspace) = app.workspaces.get(*ws_idx) else {
+    let mut start = items.len();
+    for (item_idx, item) in items.iter().copied().enumerate().rev() {
+        let Some((row_height, gap)) =
+            space_scroll_item_height_and_gap(app, &entries, item, body.height)
+        else {
             continue;
         };
-        let gap = workspace_entry_gap(app, &entries, entry_idx);
-        let needed = workspace_row_height_in_body(app, workspace, *indented, body.height)
-            .saturating_add(gap);
+        let needed = row_height.saturating_add(gap);
         if used_rows.saturating_add(needed) > body.height {
             break;
         }
         used_rows = used_rows.saturating_add(needed);
-        start = entry_idx;
+        start = item_idx;
     }
-    start.min(entries.len().saturating_sub(1))
+    start.min(items.len().saturating_sub(1))
 }
 
 pub(crate) fn workspace_list_scroll_metrics(
@@ -677,47 +730,39 @@ pub(crate) fn compute_workspace_list_areas(
     let mut row_y = body.y;
     let body_bottom = body.y + body.height;
     let mut cards = Vec::new();
-
-    let entries = workspace_list_entries(app);
-    for (entry_idx, entry) in entries.iter().enumerate().skip(scroll) {
-        match entry {
-            WorkspaceListEntry::Workspace { ws_idx, indented } => {
-                let Some(ws) = app.workspaces.get(*ws_idx) else {
-                    continue;
-                };
-                let row_height = workspace_row_height_in_body(app, ws, *indented, body.height);
-                let gap = workspace_entry_gap(app, &entries, entry_idx);
-                if row_y.saturating_add(row_height) > body_bottom {
-                    break;
-                }
-                cards.push(crate::app::state::WorkspaceCardArea {
-                    ws_idx: *ws_idx,
-                    rect: Rect::new(body.x, row_y, body.width, row_height),
-                    indented: *indented,
-                });
-                row_y = row_y
-                    .saturating_add(row_height)
-                    .saturating_add(gap)
-                    .min(body_bottom);
-            }
-        }
-    }
-
     let mut hibernated_cards = Vec::new();
-    if !app.hibernated_workspaces.is_empty() {
-        if row_y < body_bottom {
-            row_y = row_y.saturating_add(1).min(body_bottom);
+
+    let (entries, items) = space_scroll_items(app);
+    for item in items.iter().copied().skip(scroll) {
+        let Some((row_height, gap)) =
+            space_scroll_item_height_and_gap(app, &entries, item, body.height)
+        else {
+            continue;
+        };
+        if row_height == 0 || row_y.saturating_add(row_height) > body_bottom {
+            break;
         }
-        for (hib_idx, _snap) in app.hibernated_workspaces.iter().enumerate() {
-            if row_y >= body_bottom {
-                break;
+        match item {
+            SpaceScrollItem::Active {
+                ws_idx, indented, ..
+            } => {
+                cards.push(crate::app::state::WorkspaceCardArea {
+                    ws_idx,
+                    rect: Rect::new(body.x, row_y, body.width, row_height),
+                    indented,
+                });
             }
-            hibernated_cards.push(crate::app::state::HibernatedCardArea {
-                hib_idx,
-                rect: Rect::new(body.x, row_y, body.width, 1),
-            });
-            row_y = row_y.saturating_add(1).min(body_bottom);
+            SpaceScrollItem::Hibernated { hib_idx } => {
+                hibernated_cards.push(crate::app::state::HibernatedCardArea {
+                    hib_idx,
+                    rect: Rect::new(body.x, row_y, body.width, row_height),
+                });
+            }
         }
+        row_y = row_y
+            .saturating_add(row_height)
+            .saturating_add(gap)
+            .min(body_bottom);
     }
 
     (cards, hibernated_cards)
@@ -1446,7 +1491,7 @@ fn render_workspace_list(
     }
 
     if let Some(track) = scrollbar_rect {
-        render_scrollbar(frame, metrics, track, p.surface_dim, p.overlay0, "▕");
+        render_scrollbar(frame, metrics, track, p.surface_dim, p.overlay1, "▐");
     }
 
     if app.mouse_capture && list_bottom > area.y {
@@ -1590,7 +1635,7 @@ fn render_agent_detail(
     }
 
     if let Some(track) = scrollbar_rect {
-        render_scrollbar(frame, metrics, track, p.surface_dim, p.overlay0, "▕");
+        render_scrollbar(frame, metrics, track, p.surface_dim, p.overlay1, "▐");
     }
 }
 
@@ -3220,5 +3265,41 @@ rows = [[{ token = "git_status", fg = "#123456" }]]
                 },
             ]
         );
+    }
+
+    #[test]
+    fn workspace_scroll_and_scrollbar_include_hibernated_workspaces() {
+        let mut app = AppState::test_new();
+        app.workspaces = vec![Workspace::test_new("active-1")];
+        app.sidebar_spaces.rows = vec![vec![crate::config::SpaceSidebarToken::Workspace]];
+        app.sidebar_spaces.row_gap = 0;
+        for i in 0..6 {
+            let mut snap = crate::persist::capture_workspace(
+                &Workspace::test_new(&format!("hib-{i}")),
+                &app.terminals,
+                &TerminalRuntimeRegistry::new(),
+            );
+            snap.custom_name = Some(format!("hib-{i}"));
+            app.hibernated_workspaces.push(snap);
+        }
+
+        // sidebar_section_split 0.5 of total_h=12 -> ws_area height=6 -> body height=3 rows (rows 2..5)
+        let area = Rect::new(0, 0, 30, 12);
+        let ws_area = workspace_list_rect(area, app.sidebar_section_split);
+        let metrics = workspace_list_scroll_metrics(&app, ws_area);
+
+        assert!(should_show_scrollbar(metrics));
+        assert!(workspace_list_scrollbar_rect(&app, ws_area).is_some());
+        assert!(metrics.max_offset_from_bottom > 0);
+
+        let (cards_top, hib_top) = compute_workspace_list_areas(&app, area);
+        assert_eq!(cards_top.len(), 1);
+        assert_eq!(hib_top.len(), 1);
+        assert_eq!(hib_top[0].hib_idx, 0);
+
+        app.workspace_scroll = metrics.max_offset_from_bottom;
+        let (cards_bot, hib_bot) = compute_workspace_list_areas(&app, area);
+        assert!(cards_bot.is_empty());
+        assert_eq!(hib_bot.iter().map(|c| c.hib_idx).collect::<Vec<_>>(), vec![3, 4, 5]);
     }
 }

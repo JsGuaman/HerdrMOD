@@ -1971,4 +1971,57 @@ mod tests {
         let snapshot = capture_snapshot(&app.state);
         assert_eq!(snapshot.sidebar_width, Some(26));
     }
+
+    #[test]
+    fn dragging_and_wheeling_spaces_slider_reveals_all_workspaces() {
+        let mut app = app_for_mouse_test();
+        app.state.workspaces = (0..5)
+            .map(|i| Workspace::test_new(&format!("active-{i}")))
+            .collect();
+        app.state.sidebar_spaces.rows = vec![vec![crate::config::SpaceSidebarToken::Workspace]];
+        app.state.sidebar_spaces.row_gap = 0;
+        for i in 0..4 {
+            let mut snap = crate::persist::capture_workspace(
+                &Workspace::test_new(&format!("hib-{i}")),
+                &app.state.terminals,
+                &app.terminal_runtimes,
+            );
+            snap.custom_name = Some(format!("hib-{i}"));
+            app.state.hibernated_workspaces.push(snap);
+        }
+
+        let viewport = Rect::new(0, 0, 106, 14);
+        crate::ui::compute_view(&mut app.state, viewport);
+        let ws_area = app.state.workspace_list_rect();
+        let track = crate::ui::workspace_list_scrollbar_rect(&app.state, ws_area)
+            .expect("spaces slider track should be visible");
+
+        app.handle_mouse(mouse(MouseEventKind::ScrollDown, ws_area.x + 1, ws_area.y + 2));
+        assert_eq!(app.state.workspace_scroll, 1);
+        app.handle_mouse(mouse(MouseEventKind::ScrollUp, ws_area.x + 1, ws_area.y + 2));
+        assert_eq!(app.state.workspace_scroll, 0);
+
+        crate::ui::compute_view(&mut app.state, viewport);
+        app.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), track.x, track.y));
+        app.handle_mouse(mouse(
+            MouseEventKind::Drag(MouseButton::Left),
+            track.x,
+            track.y + track.height.saturating_sub(1),
+        ));
+        app.handle_mouse(mouse(
+            MouseEventKind::Up(MouseButton::Left),
+            track.x,
+            track.y + track.height.saturating_sub(1),
+        ));
+
+        crate::ui::compute_view(&mut app.state, viewport);
+        let last_hib = app
+            .state
+            .view
+            .hibernated_card_areas
+            .iter()
+            .map(|c| c.hib_idx)
+            .collect::<Vec<_>>();
+        assert!(last_hib.contains(&3));
+    }
 }

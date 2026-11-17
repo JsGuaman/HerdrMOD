@@ -1731,9 +1731,9 @@ impl AppState {
                 self.selected = self.workspaces.len() - 1;
             }
             self.active = Some(self.selected);
-            self.workspace_scroll = self
-                .workspace_scroll
-                .min(self.workspaces.len().saturating_sub(1));
+            self.workspace_scroll = self.workspace_scroll.min(
+                (self.workspaces.len() + self.hibernated_workspaces.len()).saturating_sub(1),
+            );
             self.ensure_workspace_visible(self.selected);
             self.tab_scroll_follow_active = true;
             self.refresh_tab_bar_view();
@@ -3395,9 +3395,9 @@ impl AppState {
                 if self.selected >= self.workspaces.len() {
                     self.selected = self.workspaces.len() - 1;
                 }
-                self.workspace_scroll = self
-                    .workspace_scroll
-                    .min(self.workspaces.len().saturating_sub(1));
+                self.workspace_scroll = self.workspace_scroll.min(
+                    (self.workspaces.len() + self.hibernated_workspaces.len()).saturating_sub(1),
+                );
                 self.ensure_workspace_visible(self.selected);
             }
         } else {
